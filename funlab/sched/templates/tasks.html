@@ -1,0 +1,61 @@
+{% extends "layouts/base.html" %}
+{% block page_header %}
+<div class="container-xl">
+    <div class="row g-2 align-items-center">
+        <div class="col">
+            <h2 class="page-title">
+                Defined Tasks
+            </h2>
+        </div>
+    </div>
+</div>
+{% endblock page_header %}
+
+{% block page_body %}
+<div class="container-xl">
+    <div class="row row-deck row-cards">
+        <div class="col-12">
+            <div class="card card-sm">
+                <div class="card-header">
+                </div>
+                <div class="card-body">
+                    <table class="table table-centered mb-0 rounded">
+                        <thead>
+                            <tr>
+                                <th>Id</th>
+                                <th>Last Status</th>
+                                <th>Next Run</th>
+                                <!-- <th>Func</th> -->
+                                <th>Trigger</th>
+                                <!-- <th>Misfire Grace Time</th> -->
+                                <th>Max Instances</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Item -->
+                            {% for task in tasks %}
+                            <tr>
+                                <td><a href="#" data-bs-toggle="modal"
+                                        data-bs-target="#{{task.id}}_args-form">{{task.name}}</a></td>
+                                <td style="width:25%;word-break:break-word">{{task.last_status}}</td>
+                                <td>{{task.next_run_time}}</td>
+                                <!-- <td>{{task.func_ref}}</td> -->
+                                <td style="width:25%;word-break:break-word">{{task.trigger}}</td>
+                                <!-- <td>{{task.misfire_grace_time}}</td> -->
+                                <td>{{task.max_instances}}</td>
+                            </tr>
+                            {% endfor %}
+                            <!-- End of Item -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</dev>
+{% endblock page_body %}
+
+{% block modal_dialog %}
+{% include 'args_dialog.html' %}
+{% endblock modal_dialog %}
+

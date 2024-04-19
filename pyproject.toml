@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "funlab-sched"
+version = "0.3.1"
+description = "A funlab-flaskr service plugin provide task scheduling, using APScheduler."
+authors = ["sunny <013.lin@gmail.com>"]
+readme = "README.md"
+# repository = "https://github.com/python-poetry/poetry"
+# documentation = "https://python-poetry.org/docs/"
+packages = [{include = "funlab"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+apscheduler = "^3.10.1"
+flask-wtf = "^1.2.1"
+# funlab-flaskr = {path = "../funlab-flaskr", develop = true}  #  "^0.2.3"  #
+funlab-flaskr = "^0.3.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.plugins."funlab_plugin"]
+SchedService = "funlab.sched.service:SchedService"
+
+# remove remark, if you want to test sample task
+# [tool.poetry.plugins."funlab_sched_task"]
+# SayHello = "funlab.sched.task:SayHelloTask"

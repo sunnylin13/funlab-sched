@@ -1,0 +1,5 @@
+[SchedService]
+    # jobstores = {db = { type = 'sqlalchemy', url='sqlite:///sched_tasks.db'} ,mongo = {'type' = 'mongodb'}}  # default is in memory, not persist
+    executors = {default = {type = 'threadpool', max_workers = 20}, processpool = {type='processpool', max_workers=5}}
+    job_defaults = {coalesce=true, max_instances=3}
+    timezone = 'Asia/Taipei'  # timezone must set correctly, otherwise will cause wrong excution time for job

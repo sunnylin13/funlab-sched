@@ -1,0 +1,10 @@
+
+# [SayHelloTask]  # sample task
+#     jobstore = 'default'
+#     executor = 'default'
+#     trigger='cron'
+#     day_of_week='mon,tue,wed,thu,fri'
+#     hour=8
+#     minute=30
+#     coalesce=true  # combine task if running already
+#     replace_existing=true # when use db jobstroe, need to be true
