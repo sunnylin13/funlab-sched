@@ -21,8 +21,6 @@ from funlab.core.menu import MenuItem
 from funlab.sched.task import SchedTask
 from funlab.utils import log
 
-mylogger = log.get_logger(__name__, level=logging.INFO)
-
 class SchedService(ServicePlugin):
     def __init__(self, app:_FlaskBase, trace_job_status=True):
         super().__init__(app)
@@ -56,7 +54,10 @@ class SchedService(ServicePlugin):
         Load the job from the plugin class.
         """
         tasks = load_plugins(group="funlab_sched_task")
+        no_leading_logger=log.get_logger('', fmt=log.LogFmtType.EMPTY, level=logging.INFO)
+        no_leading_logger.info('')  # default plugin loading info without newline, so to let subtask log.info to start from new line
         for task in tasks.values():
+            self.mylogger.info(f"Loading task {task} ...", end='')
             task: SchedTask = task(self)
             if (next_plan:=task.plan_schedule()):
                 task.task_def.update(next_plan)
@@ -67,8 +68,8 @@ class SchedService(ServicePlugin):
             else:
                 if task.task_def.get("replace_existing", False):
                     job.modify(**task.task_def)
-                    pass
-            mylogger.info(f"Sched loaded task {task.id}")
+            no_leading_logger.info('Done')
+
 
     def _align_task_job(self, old_task, new_task, new_job):
         if old_task:
@@ -100,13 +101,12 @@ class SchedService(ServicePlugin):
                     f'executed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")}'
                     + (f"ret={event.retval}" if event.retval is not None else "")
                 )  # {'status': 'executed', 'time': event.scheduled_run_time, 'retval': event.retval}
-        elif isinstance(event, JobEvent):
-            event: JobEvent = event
-            # if event.code == EVENT_JOB_ADDED:
-            #     self.sched_tasks[event.job_id].last_status = 'added'
-            # elif event.code == EVENT_JOB_REMOVED:
-            #     self.sched_tasks[event.job_id].last_status = 'removed'
-
+        # elif isinstance(event, JobEvent):
+        #     event: JobEvent = event
+        #     if event.code == EVENT_JOB_ADDED:
+        #         self.sched_tasks[event.job_id].last_status = 'added'
+        #     elif event.code == EVENT_JOB_REMOVED:
+        #         self.sched_tasks[event.job_id].last_status = 'removed'
         elif isinstance(event, SchedulerEvent):
             if event.code == EVENT_SCHEDULER_PAUSED:
                 status = "Paused"
