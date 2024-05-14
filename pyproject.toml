@@ -4,7 +4,7 @@ version = "0.3.1"
 description = "A funlab-flaskr service plugin provide task scheduling, using APScheduler."
 authors = ["sunny <013.lin@gmail.com>"]
 readme = "README.md"
-# repository = "https://github.com/python-poetry/poetry"
+repository = "https://github.com/sunnylin13/funlab-sched"
 # documentation = "https://python-poetry.org/docs/"
 packages = [{include = "funlab"}]
 
