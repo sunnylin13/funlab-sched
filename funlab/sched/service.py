@@ -6,6 +6,7 @@ from dataclasses import fields
 from datetime import datetime, timedelta
 
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
+                                EVENT_JOB_EXECUTED, EVENT_JOB_ERROR,
                                 EVENT_JOB_REMOVED, EVENT_SCHEDULER_PAUSED,
                                 EVENT_SCHEDULER_RESUMED,
                                 EVENT_SCHEDULER_SHUTDOWN, JobEvent,
@@ -33,6 +34,9 @@ class SchedService(ServicePlugin):
         self.register_routes()
         if trace_job_status:
             self._scheduler.add_listener(self._listener_all_event, EVENT_ALL)
+            # self._scheduler.add_listener(self._listener_job_start, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)  # Add this line
+            # self._scheduler.add_listener(self._listener_job_removed, EVENT_JOB_REMOVED)  # Add this line
+
         mi = MenuItem(title='Sched Tasks',
                 icon='<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-calendar-stats" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">\
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>\
@@ -70,7 +74,6 @@ class SchedService(ServicePlugin):
                     job.modify(**task.task_def)
             no_leading_logger.info('Done')
 
-
     def _align_task_job(self, old_task, new_task, new_job):
         if old_task:
             self.sched_tasks.pop(old_task.id, None)
@@ -85,29 +88,23 @@ class SchedService(ServicePlugin):
         """
         if isinstance(event, JobSubmissionEvent):
             event: JobSubmissionEvent = event
-            self.sched_tasks[
-                event.job_id
-            ].last_status = (
-                f'summited:{event.scheduled_run_times[0].strftime("%y-%m-%d %H:%M:%S")}'
-            )
+            if task:=self.sched_tasks.get(event.job_id, None):
+                task.last_status = f'summited:{event.scheduled_run_times[0].strftime("%y-%m-%d %H:%M:%S")}'
         elif isinstance(event, JobExecutionEvent):
             event: JobExecutionEvent = event
             if event.exception:
-                self.sched_tasks[
-                    event.job_id
-                ].last_status = f'failed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")},{event.exception}'
+                if task:=self.sched_tasks.get(event.job_id, None):
+                    task.last_status = f'failed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")},{event.exception}'
             else:
-                self.sched_tasks[event.job_id].last_status = (
-                    f'executed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")}'
-                    + (f"ret={event.retval}" if event.retval is not None else "")
-                )  # {'status': 'executed', 'time': event.scheduled_run_time, 'retval': event.retval}
+                if task:=self.sched_tasks.get(event.job_id, None):
+                    task.last_status = f'executed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")}' + (f"ret={event.retval}" if event.retval is not None else "")
         # elif isinstance(event, JobEvent):
         #     event: JobEvent = event
         #     if event.code == EVENT_JOB_ADDED:
         #         self.sched_tasks[event.job_id].last_status = 'added'
         #     elif event.code == EVENT_JOB_REMOVED:
         #         self.sched_tasks[event.job_id].last_status = 'removed'
-        elif isinstance(event, SchedulerEvent):
+        elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
                 status = "Paused"
             elif event.code == EVENT_SCHEDULER_RESUMED:
@@ -119,6 +116,26 @@ class SchedService(ServicePlugin):
             if status:
                 for task in self.sched_tasks.values():
                     task.last_status = status
+
+    # 以下目的是為檢查job是否有長時間執行, thread dead的問題, 應將其stop thread, , 而不是remove job
+    # def _listener_job_start(self, event):
+    #     if event.code == EVENT_JOB_EXECUTED:
+    #         self.sched_tasks[event.job_id].start_time = datetime.now()
+
+    # def _listener_job_removed(self, event):
+    #     if event.code == EVENT_JOB_REMOVED:
+    #         self.sched_tasks.pop(event.job_id, None)
+
+    # def monitor_jobs(self):
+    #     for job_id, task in self.sched_tasks.items():
+    #         start_time = task.start_time
+    #         if start_time is None:
+    #             runtime = timedelta(0)
+    #         else:
+    #             runtime = datetime.now() - start_time
+    #         if runtime > timedelta(minutes=20):  # Replace with your threshold
+    #             self.mylogger.warning(f"Job {task.name}:{job_id} has been running for {runtime} over 20 minutes, removing it.")
+    #             self._scheduler.remove_job(job_id)
 
     def register_routes(self):
         @self.blueprint.route("/tasks", methods=["GET", "POST"])
@@ -179,6 +196,7 @@ class SchedService(ServicePlugin):
             paused (bool, optional): if True, don't start job processing until resume is called. Defaults to False.
         """
         self._scheduler.start(paused=paused)
+        # self._scheduler.add_job(self.monitor_jobs, 'interval', hours=1)  # Add this line
 
     def stop_service(self, wait=True):
         """Shuts down the scheduler, along with its executors and job stores. Does not interrupt any currently running jobs.
@@ -210,3 +228,4 @@ class SchedService(ServicePlugin):
         Resume job processing in the scheduler.
         """
         self._scheduler.resume()
+
