@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
+import logging
 from time import sleep
 from typing import Any
 
 from flask_wtf import FlaskForm
 from funlab.core import _Configuable
 from funlab.core.config import Config
+from funlab.utils import log
 from wtforms import HiddenField, StringField
 from wtforms.validators import DataRequired
 from typing import TYPE_CHECKING
@@ -19,13 +21,20 @@ if TYPE_CHECKING:
 class SchedTask(_Configuable, ABC):
     id:str = field(init=False, metadata={'type': HiddenField})
     name:str = field(metadata={'type': HiddenField})
+
+    @staticmethod
+    def form_javascript():
+        return ''
+
     def __init__(self, sched:SchedService, name=None) -> None:
+        self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
         self.id = self.__class__.__name__.removesuffix('Task') #.lower()
         if name:
             self.name = name
         else:
             self.name = self.__class__.__name__.removesuffix('Task')
         self.last_status=''
+        self.start_time = None
         ext_task_config = sched.app.get_section_config(section=self.__class__.__name__,
                                                                 default=Config({self.__class__.__name__:{}}),
                                                                 keep_section=True)
@@ -83,6 +92,7 @@ class SchedTask(_Configuable, ABC):
                     if value is None:
                         kwargs.pop(key)
                 form_fields[field.name] = field_type(**kwargs)
+        form_fields['javascript'] = self.form_javascript()
         form_class = type(self.__class__.__name__+ 'ParamsForm', (FlaskForm,), form_fields)
         return form_class
 
