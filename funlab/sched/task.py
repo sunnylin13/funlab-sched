@@ -68,6 +68,10 @@ class SchedTask(_Configuable, ABC):
         else:
             raise Exception('No configuration set, need to provide as property here.')
 
+    @property
+    def kwargs(self):
+        return self.task_def.get('kwargs', {})
+
     def plan_schedule(self)->dict:
         """subclass provided so SchedSevice will call when config no 'trigger' defined,
            to let 'Task' provide 'trigger shchedule' at runtime according to current datetime."""
