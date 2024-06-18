@@ -74,7 +74,7 @@ class SchedService(ServicePlugin):
                     job.modify(**task.task_def)
             no_leading_logger.info('Done')
 
-    def _align_task_job(self, old_task, new_task, new_job):
+    def _align_task_job(self, old_task:SchedTask, new_task:SchedTask, new_job:Job):
         if old_task:
             self.sched_tasks.pop(old_task.id, None)
         if new_task and new_job:
@@ -88,15 +88,17 @@ class SchedService(ServicePlugin):
         """
         if isinstance(event, JobSubmissionEvent):
             event: JobSubmissionEvent = event
-            if task:=self.sched_tasks.get(event.job_id, None):
+            # update the last status of the task. '_M' task_id update to same name task
+            if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):  # _M is run manually, one time task
                 task.last_status = f'summited:{event.scheduled_run_times[0].strftime("%y-%m-%d %H:%M:%S")}'
+
         elif isinstance(event, JobExecutionEvent):
             event: JobExecutionEvent = event
             if event.exception:
-                if task:=self.sched_tasks.get(event.job_id, None):
+                if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):
                     task.last_status = f'failed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")},{event.exception}'
             else:
-                if task:=self.sched_tasks.get(event.job_id, None):
+                if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):
                     task.last_status = f'executed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")}' + (f"ret={event.retval}" if event.retval is not None else "")
         # elif isinstance(event, JobEvent):
         #     event: JobEvent = event
@@ -141,7 +143,17 @@ class SchedService(ServicePlugin):
         @self.blueprint.route("/tasks", methods=["GET", "POST"])
         @login_required
         def tasks():
-            def run_task(task):
+            def run_task(task:SchedTask):
+                task_kwargs = {}
+                for field in fields(task):
+                    if arg_value := request.form.get(field.name, None):
+                        task_kwargs.update({field.name: arg_value})
+                # run a one time task, with same name, but different id with '_M' suffix
+                one_time_task = {'id': task.task_def['id']+'_M', 'name': task.task_def['name'], 'func': task.task_def['func'],
+                    "kwargs": task_kwargs, 'trigger':'date', "run_date": datetime.now() + timedelta(seconds=2)}
+                self._scheduler.add_job(**one_time_task)
+
+            def save_as_default_args(task):
                 task_kwargs = {}
                 for field in fields(task):
                     if arg_value := request.form.get(field.name, None):
@@ -149,19 +161,16 @@ class SchedService(ServicePlugin):
                 job = self._scheduler.get_job(task_id)
                 if job:
                     job.modify(
-                        next_run_time=datetime.now() + timedelta(seconds=1),
                         kwargs=task_kwargs,
                     )
-                else:
-                    task.task_def.update({"kwargs": task_kwargs})
-                    task.task_def.update(
-                        {"next_run_time": datetime.now() + timedelta(seconds=1)}
-                    )
-                    job = self._scheduler.add_job(**task.task_def)
-                    self._align_task_job(task, task, job)
+                task.task_def.update({"kwargs": task_kwargs})
 
             if task_id:=request.form.get('id'):
-                run_task(self.sched_tasks[task_id])
+                if 'run_task' in request.form:
+                    run_task(self.sched_tasks[task_id])
+                elif 'save_args' in request.form:
+                    save_as_default_args(self.sched_tasks[task_id])
+
             forms = {}
             for task in self.sched_tasks.values():
                 form = request.form if (request.form and task.id in request.form) else None
