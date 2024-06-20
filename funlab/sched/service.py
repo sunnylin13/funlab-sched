@@ -100,7 +100,7 @@ class SchedService(ServicePlugin):
                 exception = event.exception
             else:
                 event_type = 'Executed'
-            scheduled_run_time = event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
+            scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
             retval = event.retval
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
