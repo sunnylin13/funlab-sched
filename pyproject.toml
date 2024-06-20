@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "funlab-sched"
-version = "0.3.2"
+version = "0.3.4"
 description = "A funlab-flaskr service plugin provide task scheduling, using APScheduler."
 authors = ["sunny <013.lin@gmail.com>"]
 readme = "README.md"

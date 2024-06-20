@@ -34,6 +34,7 @@ class SchedTask(_Configuable, ABC):
         else:
             self.name = self.__class__.__name__.removesuffix('Task')
         self.last_status=''
+        self.last_manual_exec_info = {}  # there are manual and auto execution shared same task. Here to record manual execution info.
         self.start_time = None
         ext_task_config = sched.app.get_section_config(section=self.__class__.__name__,
                                                                 default=Config({self.__class__.__name__:{}}),

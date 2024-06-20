@@ -4,7 +4,7 @@ import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
-
+from wtforms import HiddenField
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
                                 EVENT_JOB_EXECUTED, EVENT_JOB_ERROR,
                                 EVENT_JOB_REMOVED, EVENT_SCHEDULER_PAUSED,
@@ -86,26 +86,22 @@ class SchedService(ServicePlugin):
         """
         keep tracing of job execution
         """
+        event_type = None
+        exception = None
         if isinstance(event, JobSubmissionEvent):
             event: JobSubmissionEvent = event
-            # update the last status of the task. '_M' task_id update to same name task
-            if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):  # _M is run manually, one time task
-                task.last_status = f'summited:{event.scheduled_run_times[0].strftime("%y-%m-%d %H:%M:%S")}'
-
+            event_type = 'Summited'
+            scheduled_run_time = event.scheduled_run_times[0].strftime("%y-%m-%d %H:%M:%S")
+            retval = None
         elif isinstance(event, JobExecutionEvent):
             event: JobExecutionEvent = event
             if event.exception:
-                if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):
-                    task.last_status = f'failed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")},{event.exception}'
+                event_type = 'Failed'
+                exception = event.exception
             else:
-                if (task:=self.sched_tasks.get(event.job_id, None)) or (task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None)):
-                    task.last_status = f'executed:{event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")}' + (f"ret={event.retval}" if event.retval is not None else "")
-        # elif isinstance(event, JobEvent):
-        #     event: JobEvent = event
-        #     if event.code == EVENT_JOB_ADDED:
-        #         self.sched_tasks[event.job_id].last_status = 'added'
-        #     elif event.code == EVENT_JOB_REMOVED:
-        #         self.sched_tasks[event.job_id].last_status = 'removed'
+                event_type = 'Executed'
+            scheduled_run_time = event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
+            retval = event.retval
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
                 status = "Paused"
@@ -118,6 +114,22 @@ class SchedService(ServicePlugin):
             if status:
                 for task in self.sched_tasks.values():
                     task.last_status = status
+        if event_type:
+            if (task:=self.sched_tasks.get(event.job_id, None)):
+                job = self._scheduler.get_job(event.job_id)
+                kwargs = job.kwargs
+                args = job.args
+            elif task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None):  # _M is run manually, one time task
+                kwargs = task.last_manual_exec_info.get('kwargs', None)
+                args = task.last_manual_exec_info.get('args', None)
+            task.last_status = (f"{event_type} at:{scheduled_run_time}") \
+                                + (f", kwargs={kwargs}" if (kwargs) else "") \
+                                + (f", args={args}" if (args) else "") \
+                                + (f", ret={retval}" if retval is not None else "") \
+                                + (f", exception: {exception}" if exception else "")
+
+            self.mylogger.info(f"Task {event.job_id} {task.last_status}")
+
 
     # 以下目的是為檢查job是否有長時間執行, thread dead的問題, 應將其stop thread, , 而不是remove job
     # def _listener_job_start(self, event):
@@ -146,11 +158,13 @@ class SchedService(ServicePlugin):
             def run_task(task:SchedTask):
                 task_kwargs = {}
                 for field in fields(task):
-                    if arg_value := request.form.get(field.name, None):
+                    if (field.metadata.get('type', None)!=HiddenField):
+                        arg_value = request.form.get(field.name, None)
                         task_kwargs.update({field.name: arg_value})
                 # run a one time task, with same name, but different id with '_M' suffix
                 one_time_task = {'id': task.task_def['id']+'_M', 'name': task.task_def['name'], 'func': task.task_def['func'],
                     "kwargs": task_kwargs, 'trigger':'date', "run_date": datetime.now() + timedelta(seconds=2)}
+                task.last_manual_exec_info = one_time_task
                 self._scheduler.add_job(**one_time_task)
 
             def save_as_default_args(task):
