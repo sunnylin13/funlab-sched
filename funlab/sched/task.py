@@ -27,7 +27,6 @@ class SchedTask(_Configuable, ABC):
         return ''
 
     def __init__(self, sched:SchedService, name=None) -> None:
-        self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
         self.id = self.__class__.__name__.removesuffix('Task') #.lower()
         if name:
             self.name = name
@@ -40,11 +39,20 @@ class SchedTask(_Configuable, ABC):
                                                                 default=Config({self.__class__.__name__:{}}),
                                                                 keep_section=True)
         self.task_config = self.get_config(file_name='task.toml', ext_config=ext_task_config)  # group_session=sched.__class__.__name__)
+
+        if 'log_type' not in self.task_config.keys():
+            self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
+        else:
+            log_type = self.task_config.get("log_type")
+            if log_type not in log.LogType.__members__.keys():
+                raise KeyError(f"Invalid log type '{log_type}' of {self.__class__.__name__}")
+            self.mylogger = log.get_logger(self.__class__.__name__, logtype=log.LogType[log_type], level=logging.INFO)
+
         if 'task_def' in self.task_config:
             self._task_def = self.task_config.get('task_def', {})
         else:
             self._task_def = {key:val for key, val in vars(self.task_config).items()
-                                if(not key.startswith('_') and not key[0].isupper()) }
+                                if(not key.startswith('_') and not key[0].isupper()) and not key == 'log_type'}
         self._task_def.update(dict(id=self.id, name=self.name, func=self.execute, replace_existing=True))  ## replace_existing 必需一定為true, 當使用jobstroe時
 
         func_default_kwargs  = self.task_def.get('kwargs', {})
