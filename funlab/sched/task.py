@@ -40,19 +40,28 @@ class SchedTask(_Configuable, ABC):
                                                                 keep_section=True)
         self.task_config = self.get_config(file_name='task.toml', ext_config=ext_task_config)  # group_session=sched.__class__.__name__)
 
-        if 'log_type' not in self.task_config.keys():
-            self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
-        else:
-            log_type = self.task_config.get("log_type")
-            if log_type not in log.LogType.__members__.keys():
-                raise KeyError(f"Invalid log type '{log_type}' of {self.__class__.__name__}")
+        log_type = self.task_config.get("log_type")
+        log_level = self.task_config.get("log_level")
+        # Check if log type and level are valid
+        if log_type and log_type not in log.LogType.__members__.keys():
+            raise ValueError(f"{self.__class__.__name__} has invalid log_type '{log_type}' in config")
+        if log_level and log_level not in logging.getLevelNamesMapping():
+            raise ValueError(f"{self.__class__.__name__} has invalid log_level '{log_level}' in config. Should be {tuple(logging.getLevelNamesMapping())}")
+        # Create logger according specified log type and level
+        if log_type and log_level:
+            self.mylogger = log.get_logger(self.__class__.__name__, logtype=log.LogType[log_type], level=logging.getLevelName(log_level))
+        elif log_type:
             self.mylogger = log.get_logger(self.__class__.__name__, logtype=log.LogType[log_type], level=logging.INFO)
+        elif log_level:
+            self.mylogger = log.get_logger(self.__class__.__name__, level=logging.getLevelName(log_level))
+        else:
+            self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
 
         if 'task_def' in self.task_config:
             self._task_def = self.task_config.get('task_def', {})
         else:
             self._task_def = {key:val for key, val in vars(self.task_config).items()
-                                if(not key.startswith('_') and not key[0].isupper()) and not key == 'log_type'}
+                                if(not key.startswith('_') and not key[0].isupper()) and key not in ('log_type', 'log_level')}
         self._task_def.update(dict(id=self.id, name=self.name, func=self.execute, replace_existing=True))  ## replace_existing 必需一定為true, 當使用jobstroe時
 
         func_default_kwargs  = self.task_def.get('kwargs', {})
