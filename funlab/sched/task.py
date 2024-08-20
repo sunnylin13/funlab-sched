@@ -28,6 +28,7 @@ class SchedTask(_Configuable, ABC):
 
     def __init__(self, sched:SchedService, name=None) -> None:
         self.mylogger = log.get_logger(self.__class__.__name__, level=logging.INFO)
+        self.sched = sched
         self.id = self.__class__.__name__.removesuffix('Task') #.lower()
         if name:
             self.name = name
