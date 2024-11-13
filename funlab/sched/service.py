@@ -4,6 +4,7 @@ import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
+from funlab.flaskr.sse.models import EventPriority, SystemNotificationEvent, SystemNotificationPayload
 from wtforms import HiddenField
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
                                 EVENT_JOB_EXECUTED, EVENT_JOB_ERROR,
@@ -51,6 +52,16 @@ class SchedService(ServicePlugin):
                         </svg>',
                 href=f'/{self.name}/tasks', admin_only=True)
         self.app.append_adminmenu(mi)
+
+
+    def trigger_system_notification(self, task_name: str, message: str, summited_userid: int=None):
+        title = f"Task {task_name} execution Notification"
+        payload = SystemNotificationPayload(title=title, message=message)
+        self.app.event_manager.create_event(
+                event_type='system_notification',
+                payload=payload,
+                target_userid=summited_userid
+            )
 
     def _load_config(self):
         self._scheduler.configure(**self.plugin_config.as_dict())
