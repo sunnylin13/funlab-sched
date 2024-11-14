@@ -16,7 +16,7 @@ from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
 from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import render_template, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 from funlab.core.appbase import _FlaskBase
 from funlab.core.plugin import ServicePlugin, load_plugins
 from funlab.core.menu import MenuItem
@@ -54,14 +54,9 @@ class SchedService(ServicePlugin):
         self.app.append_adminmenu(mi)
 
 
-    def trigger_system_notification(self, task_name: str, message: str, summited_userid: int=None):
+    def send_task_notification(self, task_name: str, message: str, target_userid: int=None):
         title = f"Task {task_name} execution Notification"
-        payload = SystemNotificationPayload(title=title, message=message)
-        self.app.event_manager.create_event(
-                event_type='system_notification',
-                payload=payload,
-                target_userid=summited_userid
-            )
+        self.app.send_system_notification(title, message, target_userid=target_userid)
 
     def _load_config(self):
         self._scheduler.configure(**self.plugin_config.as_dict())
@@ -108,13 +103,22 @@ class SchedService(ServicePlugin):
             retval = None
         elif isinstance(event, JobExecutionEvent):
             event: JobExecutionEvent = event
+            
             if event.exception:
                 event_type = 'Failed'
                 exception = event.exception
+                message = f"Failed with exception: {exception}"
             else:
                 event_type = 'Executed'
+                message = f"Executed at: {datetime.now().isoformat()}"
             scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
             retval = event.retval
+            task = self.sched_tasks[event.job_id.replace('_M', '')]
+            summit_userid = task.last_manual_exec_info.get('summit_userid', None)
+            is_manual = task.last_manual_exec_info.get('is_manual', False)
+            if is_manual:
+                self.send_task_notification(task.name, message=message, target_userid=summit_userid)
+            
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
                 status = "Paused"
@@ -177,7 +181,8 @@ class SchedService(ServicePlugin):
                 # run a one time task, with same name, but different id with '_M' suffix
                 one_time_task = {'id': task.task_def['id']+'_M', 'name': task.task_def['name'], 'func': task.task_def['func'],
                     "kwargs": task_kwargs, 'trigger':'date', "run_date": datetime.now() + timedelta(seconds=2)}
-                task.last_manual_exec_info = one_time_task
+                task.last_manual_exec_info = one_time_task.copy()
+                task.last_manual_exec_info.update({'summit_userid': current_user.id, 'is_manual': True})
                 self._scheduler.add_job(**one_time_task)
 
             def save_as_default_args(task):
