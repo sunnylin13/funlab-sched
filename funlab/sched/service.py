@@ -54,9 +54,9 @@ class SchedService(ServicePlugin):
         self.app.append_adminmenu(mi)
 
 
-    def send_task_notification(self, task_name: str, message: str, target_userid: int=None):
+    def send_user_task_notification(self, task_name: str, message: str, target_userid: int=None):
         title = f"Task {task_name} execution Notification"
-        self.app.send_system_notification(title, message, target_userid=target_userid)
+        self.app.send_user_system_notification(title, message, target_userid=target_userid)
 
     def _load_config(self):
         self._scheduler.configure(**self.plugin_config.as_dict())
@@ -117,7 +117,7 @@ class SchedService(ServicePlugin):
             summit_userid = task.last_manual_exec_info.get('summit_userid', None)
             is_manual = task.last_manual_exec_info.get('is_manual', False)
             if is_manual:
-                self.send_task_notification(task.name, message=message, target_userid=summit_userid)
+                self.send_user_task_notification(task.name, message=message, target_userid=summit_userid)
             
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
