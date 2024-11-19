@@ -55,7 +55,7 @@ class SchedService(ServicePlugin):
 
 
     def send_user_task_notification(self, task_name: str, message: str, target_userid: int=None):
-        title = f"Task {task_name} execution Notification"
+        title = f"Task {task_name}執行通知"
         self.app.send_user_system_notification(title, message, target_userid=target_userid)
 
     def _load_config(self):
@@ -107,10 +107,10 @@ class SchedService(ServicePlugin):
             if event.exception:
                 event_type = 'Failed'
                 exception = event.exception
-                message = f"Failed with exception: {exception}"
+                message = f"失敗:{exception}"
             else:
                 event_type = 'Executed'
-                message = f"Executed at: {datetime.now().isoformat()}"
+                message = f"完成:{datetime.now().isoformat(timespec='seconds')}"
             scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
             retval = event.retval
             task = self.sched_tasks[event.job_id.replace('_M', '')]
