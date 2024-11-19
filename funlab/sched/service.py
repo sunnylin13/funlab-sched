@@ -4,6 +4,7 @@ import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
+from funlab.flaskr.app import FunlabFlask
 from funlab.flaskr.sse.models import EventPriority, SystemNotificationEvent, SystemNotificationPayload
 from wtforms import HiddenField
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
@@ -17,14 +18,13 @@ from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import render_template, request
 from flask_login import login_required, current_user
-from funlab.core.appbase import _FlaskBase
 from funlab.core.plugin import ServicePlugin, load_plugins
 from funlab.core.menu import MenuItem
 from funlab.sched.task import SchedTask
 from funlab.utils import log
 
 class SchedService(ServicePlugin):
-    def __init__(self, app:_FlaskBase, trace_job_status=True):
+    def __init__(self, app:FunlabFlask, trace_job_status=True):
         super().__init__(app)
         self._task_lock = threading.Lock()
         self._scheduler = BackgroundScheduler()
@@ -103,7 +103,7 @@ class SchedService(ServicePlugin):
             retval = None
         elif isinstance(event, JobExecutionEvent):
             event: JobExecutionEvent = event
-            
+
             if event.exception:
                 event_type = 'Failed'
                 exception = event.exception
@@ -118,7 +118,7 @@ class SchedService(ServicePlugin):
             is_manual = task.last_manual_exec_info.get('is_manual', False)
             if is_manual:
                 self.send_user_task_notification(task.name, message=message, target_userid=summit_userid)
-            
+
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
                 status = "Paused"

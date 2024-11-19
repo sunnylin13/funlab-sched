@@ -9,13 +9,13 @@ from typing import Any
 from flask_wtf import FlaskForm
 from funlab.core import _Configuable
 from funlab.core.config import Config
+from funlab.flaskr.app import FunlabFlask
 from funlab.utils import log
 from wtforms import HiddenField, StringField
 from wtforms.validators import DataRequired
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from funlab.sched.service import SchedService
-    from funlab.core.appbase import _FlaskBase
 
 @dataclass
 class SchedTask(_Configuable, ABC):
@@ -106,7 +106,7 @@ class SchedTask(_Configuable, ABC):
 class SayHelloTask(SchedTask):
     msg: str = field(default='bravo!!!', metadata={'type': StringField, 'label': 'Message', 'validators': [DataRequired()]})
 
-    def __init__(self, app:_FlaskBase):
+    def __init__(self, app:FunlabFlask) -> None:
         super().__init__(app)
 
     @property
