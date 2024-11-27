@@ -12,7 +12,7 @@ packages = [{include = "funlab"}]
 python = "^3.11"
 apscheduler = "^3.10.1"
 flask-wtf = "^1.2.1"
-funlab-flaskr = "^0.3.1"
+funlab-flaskr = {path = "../funlab-flaskr", develop = true}  # "^0.3.1"
 
 [build-system]
 requires = ["poetry-core"]
