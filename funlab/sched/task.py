@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
+import datetime
 import logging
 from time import sleep
 from typing import Any
-
+from dataclasses import dataclass, field, fields
+from wtforms import StringField, IntegerField, FloatField, BooleanField, DateField
+from wtforms.validators import DataRequired, Optional as OptionalValidator
+from typing import get_type_hints, Union
 from flask_wtf import FlaskForm
 from funlab.core import _Configuable
 from funlab.core.config import Config
 from funlab.flaskr.app import FunlabFlask
 from funlab.utils import log
-from wtforms import HiddenField, StringField
+from wtforms import DateField, DateTimeField, FloatField, HiddenField, IntegerField, BooleanField, DecimalField, StringField
 from wtforms.validators import DataRequired
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -54,6 +58,8 @@ class SchedTask(_Configuable, ABC):
                 setattr(self, key, value)
                 setattr(self.__dataclass_fields__[key], 'default', value)
 
+        self.form_class = self.generate_params_formclass()
+
     def __getattr__(self, name):
         # delegate apscheduler's Job attribute
         if name in ('trigger', 'executor', 'func', 'func_ref',
@@ -84,24 +90,47 @@ class SchedTask(_Configuable, ABC):
         raise NotImplementedError
 
     def generate_params_formclass(self):
+        TYPE_MAPPING = {
+            str: StringField,
+            int: IntegerField,
+            float: FloatField,
+            bool: BooleanField,
+            datetime.date: DateField,
+            datetime.datetime: DateTimeField
+        }
         form_fields = {}
+        type_hints = get_type_hints(type(self))
         for field in fields(self):
             field_metadata = field.metadata
-            if 'type' in field_metadata:
-                field_type = field_metadata['type']
-                kwargs = {}
-                for key, value in field_metadata.items():
-                    if key!='type':
-                        kwargs.update({key:value})
-                kwargs.update({'default':field_metadata.get('default', getattr(self, field.name, None))})
-                for key, value in kwargs.copy().items():
-                    if value is None:
-                        kwargs.pop(key)
-                form_fields[field.name] = field_type(**kwargs)
+            field_name = field.name
+            field_type = type_hints[field_name]
+                        # 處理 Optional 類型
+            is_optional = False
+            if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:
+                args = field_type.__args__
+                if type(None) in args:
+                    is_optional = True
+                    # 找出非 None 的類型
+                    field_type = next(arg for arg in args if arg is not type(None))
+            form_field_class = field_metadata.get('type', TYPE_MAPPING.get(field_type, StringField))
+
+            field_kwargs = {}
+            for key, value in field_metadata.items():
+                if key!='type':
+                    field_kwargs.update({key:value})
+            field_kwargs.update({'default':field_metadata.get('default', getattr(self, field.name, None))})
+            for key, value in field_kwargs.copy().items():
+                if value is None:
+                    field_kwargs.pop(key)
+
+            # 如果是可選欄位且沒有明確設置驗證器，則不添加 DataRequired
+            if is_optional and not field_kwargs.get('validators', None):
+                field_kwargs['validators'].append(OptionalValidator())
+
+            form_fields[field.name] = form_field_class(**field_kwargs)
         form_fields['javascript'] = self.form_javascript()
         form_class = type(self.__class__.__name__+ 'ParamsForm', (FlaskForm,), form_fields)
         return form_class
-
 @dataclass
 class SayHelloTask(SchedTask):
     msg: str = field(default='bravo!!!', metadata={'type': StringField, 'label': 'Message', 'validators': [DataRequired()]})
@@ -127,3 +156,5 @@ class SayHelloTask(SchedTask):
                 msg = kwargs.get('msg', 'NA')
                 print(f'Hello kwargs, {msg}')
         sleep(1)
+
+
