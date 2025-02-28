@@ -173,10 +173,11 @@ class SchedService(ServicePlugin):
         @login_required
         def tasks():
             def run_task(task:SchedTask):
+                submitted_form = task.form_class(request.form)
                 task_kwargs = {}
                 for field in fields(task):
                     if (field.metadata.get('type', None)!=HiddenField):
-                        arg_value = request.form.get(field.name, None)
+                        arg_value = getattr(submitted_form, field.name, None).data
                         task_kwargs.update({field.name: arg_value})
                 # run a one time task, with same name, but different id with '_M' suffix
                 one_time_task = {'id': task.task_def['id']+'_M', 'name': task.task_def['name'], 'func': task.task_def['func'],
@@ -197,19 +198,13 @@ class SchedService(ServicePlugin):
                     )
                 task.task_def.update({"kwargs": task_kwargs})
 
-            if task_id:=request.form.get('id'):
+            if task_id:=request.form.get('id'):  # form submitted
                 if 'run_task' in request.form:
                     run_task(self.sched_tasks[task_id])
                 elif 'save_args' in request.form:
                     save_as_default_args(self.sched_tasks[task_id])
-
-            forms = {}
-            for task in self.sched_tasks.values():
-                form = request.form if (request.form and task.id in request.form) else None
-                if formcls := task.generate_params_formclass():
-                    forms[task.id] = formcls(formdata=form)  # task.form_class(formdata=form)
             return render_template(
-                "tasks.html", tasks=self.sched_tasks.values(), forms=forms
+                "tasks.html", tasks=self.sched_tasks.values(), forms={task.id: task.form_class() for task in self.sched_tasks.values()}
             )
 
     @property
