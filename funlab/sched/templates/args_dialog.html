@@ -40,8 +40,8 @@
           {% endif %}
           {% endfor %}
           <div class="modal-footer">
-            <button name="run_task" type="submit" class="btn btn-primary">Run Now!</button>
-            <button name="save_args" type="submit" class="btn btn-primary">Save Default Arguments</button>
+            <button name="run_task" type="submit" class="btn btn-primary">Run Now!</button>  <!-- onclick="run('{{task_id}}', 'run_task')" 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理 -->
+            <button name="save_args" type="submit" class="btn btn-primary">Save Default Arguments</button> <!-- onclick="run('{{task_id}}', 'save_args')" 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理 -->
           </div>
         </div>
       </div>
@@ -50,3 +50,30 @@
   </div>
 </div>
 {% endfor %}
+
+<!-- 這段 JavaScript 代碼會在用戶按下 "Run Now!" 按鈕時執行以下操作：
+獲取表單數據並附加 run_task 字段。
+使用 fetch API 發送 POST 請求到後端。
+如果後端返回 204 狀態碼，則關閉對話框。
+這樣可以確保在後端執行 run_task 後不返回任何值，並且在關閉對話框後才執行。
+
+!!!原本用於只close dialog不更新網頁, 有其它問題先不這樣處理!!!
+<script>
+  function run(taskId, action) {
+    const form = document.getElementById(taskId + '_form');
+    const formData = new FormData(form);
+    formData.append(action, 'true');
+
+    fetch(form.action, {
+      method: 'POST',
+      body: formData,
+    }).then(response => {
+      if (response.status === 204) {
+        const modal = document.getElementById(taskId + '_args-form');
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        modalInstance.hide();
+      }
+    });
+  }
+  </script>
+  -->
