@@ -7,6 +7,7 @@ import logging
 from time import sleep
 from typing import Any
 from dataclasses import dataclass, field, fields
+from funlab.utils.form import create_form_from_dataclass
 from wtforms import StringField, IntegerField, FloatField, BooleanField, DateField
 from wtforms.validators import DataRequired, Optional as OptionalValidator
 from typing import get_type_hints, Union
@@ -23,8 +24,10 @@ if TYPE_CHECKING:
 
 @dataclass
 class SchedTask(_Configuable, ABC):
-    id:str = field(init=False, metadata={'type': HiddenField})
-    name:str = field(metadata={'type': HiddenField})
+    id:str = field(init=False, metadata={'type': HiddenField
+                                         ,'default':lambda dataclass_type: dataclass_type.__name__.removesuffix('Task')})
+    name:str = field(metadata={'type': HiddenField
+                               ,'default':lambda dataclass_type: dataclass_type.__name__.removesuffix('Task')})
 
     @staticmethod
     def form_javascript():
@@ -58,7 +61,7 @@ class SchedTask(_Configuable, ABC):
                 setattr(self, key, value)
                 setattr(self.__dataclass_fields__[key], 'default', value)
 
-        self.form_class = self.generate_params_formclass()
+        self.form_class = create_form_from_dataclass(self.__class__)
 
     def __getattr__(self, name):
         # delegate apscheduler's Job attribute
@@ -88,49 +91,6 @@ class SchedTask(_Configuable, ABC):
     @abstractmethod
     def execute(self, *args:Any, **kwargs: Any) -> Any:
         raise NotImplementedError
-
-    def generate_params_formclass(self):
-        TYPE_MAPPING = {
-            str: StringField,
-            int: IntegerField,
-            float: FloatField,
-            bool: BooleanField,
-            datetime.date: DateField,
-            datetime.datetime: DateTimeField
-        }
-        form_fields = {}
-        type_hints = get_type_hints(type(self))
-        for field in fields(self):
-            field_metadata = field.metadata
-            field_name = field.name
-            field_type = type_hints[field_name]
-                        # 處理 Optional 類型
-            is_optional = False
-            if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:
-                args = field_type.__args__
-                if type(None) in args:
-                    is_optional = True
-                    # 找出非 None 的類型
-                    field_type = next(arg for arg in args if arg is not type(None))
-            form_field_class = field_metadata.get('type', TYPE_MAPPING.get(field_type, StringField))
-
-            field_kwargs = {}
-            for key, value in field_metadata.items():
-                if key!='type':
-                    field_kwargs.update({key:value})
-            field_kwargs.update({'default':field_metadata.get('default', getattr(self, field.name, None))})
-            for key, value in field_kwargs.copy().items():
-                if value is None:
-                    field_kwargs.pop(key)
-
-            # 如果是可選欄位且沒有明確設置驗證器，則不添加 DataRequired
-            if is_optional and not field_kwargs.get('validators', None):
-                field_kwargs['validators'].append(OptionalValidator())
-
-            form_fields[field.name] = form_field_class(**field_kwargs)
-        form_fields['javascript'] = self.form_javascript()
-        form_class = type(self.__class__.__name__+ 'ParamsForm', (FlaskForm,), form_fields)
-        return form_class
 @dataclass
 class SayHelloTask(SchedTask):
     msg: str = field(default='bravo!!!', metadata={'type': StringField, 'label': 'Message', 'validators': [DataRequired()]})
