@@ -16,7 +16,7 @@ from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
                                 SchedulerEvent)
 from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import render_template, request
+from flask import make_response, render_template, request
 from flask_login import login_required, current_user
 from funlab.core.plugin import ServicePlugin, load_plugins
 from funlab.core.menu import MenuItem
@@ -186,26 +186,34 @@ class SchedService(ServicePlugin):
                 task.last_manual_exec_info.update({'summit_userid': current_user.id, 'is_manual': True})
                 self._scheduler.add_job(**one_time_task)
 
-            def save_as_default_args(task):
+            def save_as_default_args(task:SchedTask):
                 task_kwargs = {}
                 for field in fields(task):
                     if arg_value := request.form.get(field.name, None):
                         task_kwargs.update({field.name: arg_value})
-                job = self._scheduler.get_job(task_id)
+                job = self._scheduler.get_job(task.id)
                 if job:
                     job.modify(
                         kwargs=task_kwargs,
                     )
                 task.task_def.update({"kwargs": task_kwargs})
 
-            if task_id:=request.form.get('id'):  # form submitted
-                if 'run_task' in request.form:
-                    run_task(self.sched_tasks[task_id])
-                elif 'save_args' in request.form:
-                    save_as_default_args(self.sched_tasks[task_id])
-            return render_template(
-                "tasks.html", tasks=self.sched_tasks.values(), forms={task.id: task.form_class() for task in self.sched_tasks.values()}
-            )
+            submitted_task_id=request.form.get('id')
+            if 'run_task' in request.form:
+                run_task(self.sched_tasks[submitted_task_id])
+                # 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理
+                # return make_response('', 204)  # No Content
+            elif 'save_args' in request.form:
+                save_as_default_args(self.sched_tasks[submitted_task_id])
+                # 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理
+                # return make_response('', 204)  # No Content
+            tasks = []
+            forms = {}
+            for task in self.sched_tasks.values():
+                tasks.append(task)
+                form = request.form if (request.form and task.id in request.form) else None
+                forms[task.id] = task.form_class(formdata=form)  # 這裡必需將同request.form時的值填入form, 其它則是None, 若全部都是None, 則會造成id, name都是相同request.form的值, 致submit時錯誤, 原因尚未找到
+            return render_template("tasks.html", tasks=tasks, forms=forms)
 
     @property
     def running(self):
