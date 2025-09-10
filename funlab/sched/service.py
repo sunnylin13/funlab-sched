@@ -18,7 +18,9 @@ from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import make_response, render_template, request
 from flask_login import login_required, current_user
-from funlab.core.plugin import ServicePlugin, load_plugins
+
+from funlab.core.plugin import ServicePlugin
+from funlab.core.plugin_manager import load_plugins
 from funlab.core.menu import MenuItem
 from funlab.sched.task import SchedTask
 from funlab.utils import log
