@@ -134,20 +134,27 @@ class SchedService(ServicePlugin):
                 for task in self.sched_tasks.values():
                     task.last_status = status
         if event_type:
+            task = None
+            kwargs = None
+            args = None
+            
             if (task:=self.sched_tasks.get(event.job_id, None)):
                 job = self._scheduler.get_job(event.job_id)
-                kwargs = job.kwargs
-                args = job.args
+                if job:  # ✅ 防止 job 為 None
+                    kwargs = job.kwargs
+                    args = job.args
             elif task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None):  # _M is run manually, one time task
                 kwargs = task.last_manual_exec_info.get('kwargs', None)
                 args = task.last_manual_exec_info.get('args', None)
-            task.last_status = (f"{event_type} at:{scheduled_run_time}") \
-                                + (f", kwargs={kwargs}" if (kwargs) else "") \
-                                + (f", args={args}" if (args) else "") \
-                                + (f", ret={retval}" if retval is not None else "") \
-                                + (f", exception: {exception}" if exception else "")
+            
+            if task:  # ✅ 確保 task 存在才更新狀態
+                task.last_status = (f"{event_type} at:{scheduled_run_time}") \
+                                    + (f", kwargs={kwargs}" if (kwargs) else "") \
+                                    + (f", args={args}" if (args) else "") \
+                                    + (f", ret={retval}" if retval is not None else "") \
+                                    + (f", exception: {exception}" if exception else "")
 
-            self.mylogger.info(f"Task {event.job_id} {task.last_status}")
+                self.mylogger.info(f"Task {event.job_id} {task.last_status}")
 
 
     # 以下目的是為檢查job是否有長時間執行, thread dead的問題, 應將其stop thread, , 而不是remove job
