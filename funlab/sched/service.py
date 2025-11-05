@@ -188,8 +188,20 @@ class SchedService(ServicePlugin):
                     if (field.metadata.get('type', None)!=HiddenField):
                         arg_value = getattr(submitted_form, field.name, None).data
                         task_kwargs.update({field.name: arg_value})
+                
+                # ✅ 檢查是否已有手動執行的 job 在進行中
+                manual_job_id = task.task_def['id'] + '_M'
+                if self._scheduler.get_job(manual_job_id):
+                    self.mylogger.warning(f"Task {task.name} 已在執行中，略過此次請求")
+                    self.send_user_task_notification(
+                        task.name, 
+                        "任務已在執行中，請稍後再試",
+                        target_userid=current_user.id
+                    )
+                    return
+                
                 # run a one time task, with same name, but different id with '_M' suffix
-                one_time_task = {'id': task.task_def['id']+'_M', 'name': task.task_def['name'], 'func': task.task_def['func'],
+                one_time_task = {'id': manual_job_id, 'name': task.task_def['name'], 'func': task.task_def['func'],
                     "kwargs": task_kwargs, 'trigger':'date', "run_date": datetime.now() + timedelta(seconds=2)}
                 task.last_manual_exec_info = one_time_task.copy()
                 task.last_manual_exec_info.update({'summit_userid': current_user.id, 'is_manual': True})
