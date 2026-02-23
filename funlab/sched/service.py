@@ -4,8 +4,8 @@ import threading
 import time
 from dataclasses import fields
 from datetime import datetime, timedelta
+from funlab.core.enhanced_plugin import EnhancedServicePlugin
 from funlab.flaskr.app import FunlabFlask
-from funlab.flaskr.sse.models import EventPriority, SystemNotificationEvent, SystemNotificationPayload
 from wtforms import HiddenField
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
                                 EVENT_JOB_EXECUTED, EVENT_JOB_ERROR,
@@ -18,14 +18,20 @@ from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import make_response, render_template, request
 from flask_login import login_required, current_user
-
-from funlab.core.plugin import ServicePlugin
 from funlab.core.plugin_manager import load_plugins
 from funlab.core.menu import MenuItem
 from funlab.sched.task import SchedTask
 from funlab.utils import log
 
-class SchedService(ServicePlugin):
+class SchedService(EnhancedServicePlugin):
+    # Declare optional module-level dependencies so plugin_manager can warn
+    # instead of crashing when these are missing.
+    __plugin_module_deps__: list[str] = []            # hard requirements (module must exist)
+    __plugin_optional_module_deps__: list[str] = [    # soft requirements (nice to have)
+        'funlab.sse.model',       # from funlab-sse; enables SSE job notifications
+    ]
+    __plugin_dependencies__: list[str] = []           # plugin-name dependencies (loaded first)
+
     def __init__(self, app:FunlabFlask, trace_job_status=True):
         super().__init__(app)
         self._task_lock = threading.Lock()
@@ -33,12 +39,42 @@ class SchedService(ServicePlugin):
         self.sched_tasks: dict[str, SchedTask] = {}
         self._load_config()
         self._load_tasks()
-        self.start_service()
+        self.start()
         self.register_routes()
         if trace_job_status:
             self._scheduler.add_listener(self._listener_all_event, EVENT_ALL)
             # self._scheduler.add_listener(self._listener_job_start, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)  # Add this line
             # self._scheduler.add_listener(self._listener_job_removed, EVENT_JOB_REMOVED)  # Add this line
+        if self.plugin_config.get('HOOK_EXAMPLES', False):
+            self._register_hook_examples()
+
+    def _register_hook_examples(self):
+        if not hasattr(self.app, 'hook_manager'):
+            return
+
+        self.app.hook_manager.register_hook(
+            'task_before_execute',
+            self._hook_example_task_before,
+            priority=50,
+            plugin_name=self.name,
+        )
+        self.app.hook_manager.register_hook(
+            'task_error',
+            self._hook_example_task_error,
+            priority=50,
+            plugin_name=self.name,
+        )
+
+    def _hook_example_task_before(self, context):
+        task_name = context.get('task_name')
+        if task_name:
+            self.mylogger.debug(f"Hook example: task_before_execute {task_name}")
+
+    def _hook_example_task_error(self, context):
+        task_name = context.get('task_name')
+        error = context.get('error')
+        if task_name and error:
+            self.mylogger.info(f"Hook example: task_error {task_name}: {error}")
 
     def setup_menus(self):
         super().setup_menus()
@@ -137,7 +173,7 @@ class SchedService(ServicePlugin):
             task = None
             kwargs = None
             args = None
-            
+
             if (task:=self.sched_tasks.get(event.job_id, None)):
                 job = self._scheduler.get_job(event.job_id)
                 if job:  # ✅ 防止 job 為 None
@@ -146,7 +182,7 @@ class SchedService(ServicePlugin):
             elif task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None):  # _M is run manually, one time task
                 kwargs = task.last_manual_exec_info.get('kwargs', None)
                 args = task.last_manual_exec_info.get('args', None)
-            
+
             if task:  # ✅ 確保 task 存在才更新狀態
                 task.last_status = (f"{event_type} at:{scheduled_run_time}") \
                                     + (f", kwargs={kwargs}" if (kwargs) else "") \
@@ -188,18 +224,18 @@ class SchedService(ServicePlugin):
                     if (field.metadata.get('type', None)!=HiddenField):
                         arg_value = getattr(submitted_form, field.name, None).data
                         task_kwargs.update({field.name: arg_value})
-                
+
                 # ✅ 檢查是否已有手動執行的 job 在進行中
                 manual_job_id = task.task_def['id'] + '_M'
                 if self._scheduler.get_job(manual_job_id):
                     self.mylogger.warning(f"Task {task.name} 已在執行中，略過此次請求")
                     self.send_user_task_notification(
-                        task.name, 
+                        task.name,
                         "任務已在執行中，請稍後再試",
                         target_userid=current_user.id
                     )
                     return
-                
+
                 # run a one time task, with same name, but different id with '_M' suffix
                 one_time_task = {'id': manual_job_id, 'name': task.task_def['name'], 'func': task.task_def['func'],
                     "kwargs": task_kwargs, 'trigger':'date', "run_date": datetime.now() + timedelta(seconds=2)}
@@ -255,30 +291,20 @@ class SchedService(ServicePlugin):
         """Get the base scheduler decorator"""
         return self._scheduler.scheduled_job
 
-    def start_service(self, paused=False):
-        """Start the configured executors and job stores and begin processing scheduled jobs.
-        Args:
-            paused (bool, optional): if True, don't start job processing until resume is called. Defaults to False.
-        """
-        self._scheduler.start(paused=paused)
-        # self._scheduler.add_job(self.monitor_jobs, 'interval', hours=1)  # Add this line
+    def _on_start(self):
+        """Start the APScheduler background scheduler."""
+        self._scheduler.start(paused=False)
 
-    def stop_service(self, wait=True):
-        """Shuts down the scheduler, along with its executors and job stores. Does not interrupt any currently running jobs.
-        Args:
-            wait (bool, optional): True to wait until all currently executing jobs have finished. Defaults to True.
-        """
-        self._scheduler.shutdown(wait)
+    def _on_stop(self):
+        """Shut down the APScheduler (waits for running jobs to finish)."""
+        self._scheduler.shutdown(wait=True)
 
-    def restart_service(self, wait=True):
-        self.stop_service(wait=wait)
-        self.start_service()
-
-    def reload_service(self, wait=True):
-        self.stop_service(wait=wait)
+    def reload(self):
+        """Reload scheduler configuration and tasks, then restart."""
+        self.stop()
         self._load_config()
         self._load_tasks()
-        self.start_service()
+        self.start()
 
     def pause(self):
         """
