@@ -94,7 +94,7 @@ class SchedService(EnhancedServicePlugin):
 
     def send_user_task_notification(self, task_name: str, message: str, target_userid: int=None):
         title = f"Task {task_name}執行通知"
-        self.app.send_user_system_notification(title, message, target_userid=target_userid)
+        self.app.send_user_notification(title, message, target_userid=target_userid)
 
     def _load_config(self):
         self._scheduler.configure(**self.plugin_config.as_dict())
