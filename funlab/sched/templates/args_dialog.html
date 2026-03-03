@@ -3,8 +3,8 @@
   <div class="modal-dialog modal-lg" role="document">
     <form action="{{ url_for('sched_bp.tasks') }}" method="POST">
       {{ form.hidden_tag() }}
-      {% set task_name = form['name'].default %}
-      {% set task_id = form['id'].default %}
+      {% set task_name = form['name'].data %}
+      {% set task_id = form['id'].data %}
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Run Task {{task_name}}</h5>
