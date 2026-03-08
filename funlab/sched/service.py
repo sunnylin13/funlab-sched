@@ -181,38 +181,46 @@ class SchedService(EnhancedServicePlugin):
           add_job      — APScheduler registration
         """
         task_eps = list(_task_entry_points(group="funlab_sched_task"))
-        no_leading_logger = log.get_logger('', fmt=log.LogFmtType.EMPTY, level=logging.INFO)
-        no_leading_logger.info('')  # start subtask output on a new line
         for ep in task_eps:
-            self._load_single_task(ep, no_leading_logger)
+            self._load_single_task(ep)
 
-    def _load_single_task(self, ep, no_leading_logger):
+    def _load_single_task(self, ep):
             # ── Phase 1: class loading (triggers module-level imports on first call) ──
-            self.mylogger.info(f"Loading entry point {ep.name} ...", end='')
-            t_ep = time.perf_counter()
+            self.mylogger.progress(f"Loading task {ep.name} ...")
             try:
                 task_class = ep.load()
             except Exception as e:
+                self.mylogger.warning()  # add return line
                 self.mylogger.warning(
                     f"[SchedService] ⚠ Skipping task '{ep.name}': "
                     f"failed to load class — {type(e).__name__}: {e}"
                 )
+                self.mylogger.end_progress()
                 return
-            t_ep = time.perf_counter() - t_ep
             try:
-                # ── Phase 2: task instantiation (lazy imports in __init__ fire here) ──
-                t_init = time.perf_counter()
+                # Instantiate task and compute schedule; only track total time.
                 task: SchedTask = task_class(self)
-                t_init = time.perf_counter() - t_init
 
-                # ── Phase 3: schedule calculation ──
-                t_plan = time.perf_counter()
+                # If task config explicitly disables the task, skip registration.
+                disabled = task.task_config.get('disable', False)
+
                 if (next_plan := task.plan_schedule()):
                     task.task_def.update(next_plan)
-                t_plan = time.perf_counter() - t_plan
 
-                # ── Phase 4: APScheduler registration ──
-                t_sched = time.perf_counter()
+                if disabled:
+                    self.mylogger.end_progress(f"Skipped task {ep.name}: disabled in config")
+                    return
+
+                # If no trigger is provided (from plan_schedule or config), do not
+                # add an APScheduler job. Still keep the task object loaded so
+                # it is available for manual execution via the UI/API.
+                if not task.task_def.get('trigger'):
+                    task.last_status = 'Loaded (manual-only)'
+                    self.sched_tasks[task.id] = task
+                    self.mylogger.end_progress(f"Loaded task {ep.name}: registered as manual-only (no trigger)")
+                    return
+
+                # APScheduler registration
                 job: Job = self._scheduler.get_job(task.id)
                 if not job:
                     job = self._scheduler.add_job(**task.task_def)
@@ -220,22 +228,14 @@ class SchedService(EnhancedServicePlugin):
                 else:
                     if task.task_def.get("replace_existing", False):
                         job.modify(**task.task_def)
-                t_sched = time.perf_counter() - t_sched
-
-                t_total = t_ep + t_init + t_plan + t_sched
-                no_leading_logger.info(
-                    f'Done  '
-                    f'[total={t_total:.1f}s'
-                    f' | ep.load={t_ep:.3f}s'
-                    f', __init__={t_init:.3f}s'
-                    f', plan_schedule={t_plan:.3f}s'
-                    f', add_job={t_sched:.3f}s]'
-                )
             except Exception as e:
+                self.mylogger.warning()  # add return line
                 self.mylogger.warning(
                     f"[SchedService] ⚠ Task '{ep.name}' disabled — "
                     f"failed during initialisation: {e}"
                 )
+            finally:
+                self.mylogger.end_progress(f"Task {ep.name} loaded.")
 
     def _align_task_job(self, old_task:SchedTask, new_task:SchedTask, new_job:Job):
         if old_task:
