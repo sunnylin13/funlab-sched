@@ -24,6 +24,8 @@
               <tr>
                 <th>Id</th>
                 <th>Last Status</th>
+                <th>Manual Queue</th>
+                <th>Manual Result</th>
                 <th>Next Run</th>
                 <!-- <th>Func</th>
                 <th>Args</th>-->
@@ -38,6 +40,27 @@
               <tr>
                 <td><a href="#" data-bs-toggle="modal" data-bs-target="#{{task.id}}_args-form">{{task.name}}</a></td>
                 <td class="w-25 text-break">{{task.last_status}}</td>
+                <td class="w-25 text-break">
+                  {% if task.last_manual_exec_info %}
+                    {{ task.last_manual_exec_info.get('queued_at', '-') }}<br>
+                    <small>{{ task.last_manual_exec_info.get('queue_func', '-') }}</small>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td class="w-25 text-break">
+                  {% if task.last_manual_exec_info %}
+                    {{ task.last_manual_exec_info.get('result_status', '-') }}
+                    {% if task.last_manual_exec_info.get('result_time', '') %}
+                      <br><small>{{ task.last_manual_exec_info.get('result_time') }}</small>
+                    {% endif %}
+                    {% if task.last_manual_exec_info.get('exception', '') %}
+                      <br><small>{{ task.last_manual_exec_info.get('exception') }}</small>
+                    {% endif %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
                 <td>{{task.next_run_time}}</td>
                 <!-- <td>{{task.func_ref}}</td>
                 <td>{{task.kwargs}}</td>-->
