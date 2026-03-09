@@ -190,12 +190,12 @@ class SchedService(EnhancedServicePlugin):
             try:
                 task_class = ep.load()
             except Exception as e:
-                self.mylogger.warning()  # add return line
+                self.mylogger.warning("")  # add return line
                 self.mylogger.warning(
                     f"[SchedService] ⚠ Skipping task '{ep.name}': "
                     f"failed to load class — {type(e).__name__}: {e}"
                 )
-                self.mylogger.end_progress()
+                self.mylogger.end_progress(f"Failed to load task {ep.name}")
                 return
             try:
                 # Instantiate task and compute schedule; only track total time.
@@ -229,7 +229,7 @@ class SchedService(EnhancedServicePlugin):
                     if task.task_def.get("replace_existing", False):
                         job.modify(**task.task_def)
             except Exception as e:
-                self.mylogger.warning()  # add return line
+                self.mylogger.warning("")  # add return line
                 self.mylogger.warning(
                     f"[SchedService] ⚠ Task '{ep.name}' disabled — "
                     f"failed during initialisation: {e}"
