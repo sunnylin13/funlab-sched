@@ -13,6 +13,12 @@ python = "^3.11"
 apscheduler = "^3.10.1"
 flask-wtf = "^1.2.1"
 funlab-flaskr = {path = "../funlab-flaskr", develop = true}  # "^0.3.1"
+# Optional: install funlab-sse to enable SSE job-status notifications.
+# Without it SchedService still works; notifications are simply suppressed.
+funlab-sse = {path = "../funlab-sse", develop = true, optional = true}
+
+[tool.poetry.extras]
+sse = ["funlab-sse"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -20,6 +26,15 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.plugins."funlab_plugin"]
 SchedService = "funlab.sched.service:SchedService"
+
+# Declare plugin-level load order understood by funlab plugin_manager's
+# PluginDependencyResolver.  SSEService is optional: if not installed,
+# SchedService loads fine with SSE notifications disabled.
+[tool.funlab_plugin_metadata.SchedService]
+# SchedService must load at startup: it starts a BackgroundScheduler thread,
+# registers task-management routes, and adds an admin menu item.
+load_mode = "startup"
+optional_dependencies = ["SSEService"]   # load SSEService first when present
 
 # remove remark, if you want to test sample task
 # [tool.poetry.plugins."funlab_sched_task"]
