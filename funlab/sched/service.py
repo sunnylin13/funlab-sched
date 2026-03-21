@@ -7,7 +7,7 @@ import time
 from dataclasses import fields
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
-from funlab.core.enhanced_plugin import EnhancedServicePlugin
+from funlab.core.plugin import ServicePlugin
 from apscheduler.events import (EVENT_ALL, EVENT_JOB_ADDED, EVENT_JOB_MODIFIED,
                                 EVENT_JOB_EXECUTED, EVENT_JOB_ERROR,
                                 EVENT_JOB_MISSED, EVENT_JOB_REMOVED, EVENT_SCHEDULER_PAUSED,
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from funlab.flaskr.app import FunlabFlask
     from funlab.sched.task import SchedTask
 
-class SchedService(EnhancedServicePlugin):
+class SchedService(ServicePlugin):
     # Declare optional module-level dependencies so plugin_manager can warn
     # instead of crashing when these are missing.
     # __plugin_module_deps__: list[str] = []            # hard requirements (module must exist)
@@ -101,7 +101,7 @@ class SchedService(EnhancedServicePlugin):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self._load_tasks()
-            self.start()   # _on_start() → self._scheduler.start(paused=False)
+            self.start()   # _on_start() starts APScheduler with paused=False.
         except Exception as e:
             self.mylogger.error(
                 f"[SchedService] Fatal error during task loading: {e}",
@@ -157,7 +157,7 @@ class SchedService(EnhancedServicePlugin):
 
 
     def send_user_task_notification(self, task_name: str, message: str, target_userid: int=None):
-        title = f"Task {task_name}執行通知"
+        title = f"Task {task_name} 執行通知"
         self.app.send_user_notification(title, message, target_userid=target_userid)
 
     def _load_config(self):
@@ -175,25 +175,25 @@ class SchedService(EnhancedServicePlugin):
         wrapper) so each task failure is isolated and does not abort startup.
         Each phase is individually timed so import-chain bottlenecks are clearly
         visible in the log:
-          ep.load      — module import (first call per package triggers heavy imports)
-          __init__     — task instantiation (lazy spider/lib imports fire here)
-          plan_schedule — next-run calculation
-          add_job      — APScheduler registration
+          ep.load        module import (first call per package triggers heavy imports)
+          __init__       task instantiation (lazy imports often happen here)
+          plan_schedule  next-run calculation
+          add_job        APScheduler registration
         """
         task_eps = list(_task_entry_points(group="funlab_sched_task"))
         for ep in task_eps:
             self._load_single_task(ep)
 
     def _load_single_task(self, ep):
-            # ── Phase 1: class loading (triggers module-level imports on first call) ──
+            # Phase 1: class loading (may trigger module-level imports on first call).
             self.mylogger.progress(f"Loading task {ep.name} ...")
             try:
                 task_class = ep.load()
             except Exception as e:
                 self.mylogger.warning("")  # add return line
                 self.mylogger.warning(
-                    f"[SchedService] ⚠ Skipping task '{ep.name}': "
-                    f"failed to load class — {type(e).__name__}: {e}"
+                    f"[SchedService] Skipping task '{ep.name}': "
+                    f"failed to load class ({type(e).__name__}: {e})"
                 )
                 self.mylogger.end_progress(f"Failed to load task {ep.name}")
                 return
@@ -231,7 +231,7 @@ class SchedService(EnhancedServicePlugin):
             except Exception as e:
                 self.mylogger.warning("")  # add return line
                 self.mylogger.warning(
-                    f"[SchedService] ⚠ Task '{ep.name}' disabled — "
+                    f"[SchedService] Task '{ep.name}' disabled: "
                     f"failed during initialisation: {e}"
                 )
             finally:
@@ -261,14 +261,14 @@ class SchedService(EnhancedServicePlugin):
 
             if event.code == EVENT_JOB_MISSED:
                 event_type = 'Missed'
-                message = f"錯過排程:{event.scheduled_run_time}"
+                message = f"錯過排程: {event.scheduled_run_time}"
             elif event.exception:
                 event_type = 'Failed'
                 exception = event.exception
-                message = f"失敗:{exception}"
+                message = f"失敗: {exception}"
             else:
                 event_type = 'Executed'
-                message = f"完成:{datetime.now().isoformat(timespec='seconds')}"
+                message = f"完成: {datetime.now().isoformat(timespec='seconds')}"
             scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
             retval = event.retval
             task = self.sched_tasks[event.job_id.replace('_M', '')]
@@ -301,14 +301,14 @@ class SchedService(EnhancedServicePlugin):
 
             if (task:=self.sched_tasks.get(event.job_id, None)):
                 job = self._scheduler.get_job(event.job_id)
-                if job:  # ✅ 防止 job 為 None
+                if job:  # Guard against ``job`` being None.
                     kwargs = job.kwargs
                     args = job.args
             elif task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None):  # _M is run manually, one time task
                 kwargs = task.last_manual_exec_info.get('kwargs', None)
                 args = task.last_manual_exec_info.get('args', None)
 
-            if task:  # ✅ 確保 task 存在才更新狀態
+            if task:  # Only update status when the task still exists.
                 task.last_status = (f"{event_type} at:{scheduled_run_time}") \
                                     + (f", kwargs={kwargs}" if (kwargs) else "") \
                                     + (f", args={args}" if (args) else "") \
@@ -325,7 +325,8 @@ class SchedService(EnhancedServicePlugin):
                 self.mylogger.info(f"Task {event.job_id} {task.last_status}")
 
 
-    # 以下目的是為檢查job是否有長時間執行, thread dead的問題, 應將其stop thread, , 而不是remove job
+    # The following monitoring helpers were kept for future investigation of
+    # long-running jobs or dead worker threads.
     # def _listener_job_start(self, event):
     #     if event.code == EVENT_JOB_EXECUTED:
     #         self.sched_tasks[event.job_id].start_time = datetime.now()
@@ -397,7 +398,7 @@ class SchedService(EnhancedServicePlugin):
                         # Ignore if attribute cannot be set; we only attempt best-effort
                         pass
 
-                # ✅ 檢查是否已有手動執行的 job 在進行中
+                # Avoid queueing the same manual-run job more than once.
                 manual_job_id = task.task_def['id'] + '_M'
                 if self._scheduler.get_job(manual_job_id):
                     self.mylogger.warning(f"Task {task.name} 已在執行中，略過此次請求")
@@ -465,18 +466,18 @@ class SchedService(EnhancedServicePlugin):
             submitted_task_id=request.form.get('id')
             if 'run_task' in request.form:
                 run_task(self.sched_tasks[submitted_task_id])
-                # 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理
+                # Originally this only closed the dialog without refreshing the page.
                 # return make_response('', 204)  # No Content
             elif 'save_args' in request.form:
                 save_as_default_args(self.sched_tasks[submitted_task_id])
-                # 原本用於只close dialog不更新網頁, 有其它問題先不這樣處理
+                # Originally this only closed the dialog without refreshing the page.
                 # return make_response('', 204)  # No Content
             tasks = []
             forms = {}
             for task in self.sched_tasks.values():
                 tasks.append(task)
                 form = request.form if (request.form and task.id == submitted_task_id) else None
-                forms[task.id] = task.form_class(formdata=form)  # 這裡必需將同request.form時的值填入form, 其它則是None, 若全部都是None, 則會造成id, name都是相同request.form的值, 致submit時錯誤, 原因尚未找到
+                forms[task.id] = task.form_class(formdata=form)  # Bind form data only for the submitted task to avoid cross-form contamination.
             return render_template("tasks.html", tasks=tasks, forms=forms)
 
     @property
@@ -506,15 +507,17 @@ class SchedService(EnhancedServicePlugin):
         """Shut down the APScheduler (waits for running jobs to finish)."""
         self._scheduler.shutdown(wait=True)
 
-    def reload(self):
-        """Reload scheduler configuration and tasks, then restart."""
-        # Block until any in-progress background loading finishes before stopping.
+    def _on_reload(self):
+        """Reload scheduler configuration and tasks.
+
+        Called by Plugin.reload() after stop() and before start().
+        """
+        super()._on_reload()
+        # Ensure any in-progress loader work is complete before rebuilding jobs.
         self._tasks_loaded.wait()
-        self.stop()
         self._tasks_loaded.clear()
         self._load_config()
         self._load_tasks()   # synchronous during manual reload
-        self.start()
         self._tasks_loaded.set()
 
     def pause(self):
