@@ -486,6 +486,17 @@ class SchedService(ServicePlugin):
         return self._scheduler.running
 
     @property
+    def metrics(self):
+        base_metrics = super().metrics
+        base_metrics.update({
+            'scheduler_running': bool(self.running),
+            'tasks_loaded': bool(self._tasks_loaded.is_set()),
+            'registered_tasks': len(self.sched_tasks),
+            'loader_started': bool(self._loader_started),
+        })
+        return base_metrics
+
+    @property
     def state(self):
         """Get the state of the scheduler."""
         return self._scheduler.state
@@ -519,6 +530,9 @@ class SchedService(ServicePlugin):
         self._load_config()
         self._load_tasks()   # synchronous during manual reload
         self._tasks_loaded.set()
+
+    def _perform_health_check(self) -> bool:
+        return bool(self.running and self._tasks_loaded.is_set())
 
     def pause(self):
         """
