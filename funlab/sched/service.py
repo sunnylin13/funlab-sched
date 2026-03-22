@@ -19,6 +19,8 @@ from apscheduler.job import Job
 from apscheduler.schedulers.background import BackgroundScheduler
 from importlib.metadata import entry_points as _task_entry_points
 from funlab.core.menu import MenuItem
+from funlab.core.auth import policy_required
+from funlab.core.policy import is_admin
 from funlab.utils import log
 
 if TYPE_CHECKING:
@@ -152,7 +154,7 @@ class SchedService(ServicePlugin):
                         <path d="M7 3v4"></path>\
                         <path d="M3 11h16"></path>\
                         </svg>',
-                href=f'/{self.name}/tasks', admin_only=True)
+            href=f'/{self.name}/tasks', required_policy=is_admin)
         self.app.append_adminmenu(mi)
 
 
@@ -348,11 +350,11 @@ class SchedService(ServicePlugin):
 
     def register_routes(self):
         from flask import render_template, request
-        from flask_login import login_required, current_user
+        from flask_login import current_user
         from wtforms import HiddenField
 
         @self.blueprint.route("/tasks", methods=["GET", "POST"])
-        @login_required
+        @policy_required(is_admin)
         def tasks():
             def run_task(task:SchedTask):
                 if not self.running:
