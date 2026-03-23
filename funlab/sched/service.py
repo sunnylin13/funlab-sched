@@ -219,7 +219,7 @@ class SchedService(ServicePlugin):
                 if not task.task_def.get('trigger'):
                     task.last_status = 'Loaded (manual-only)'
                     self.sched_tasks[task.id] = task
-                    self.mylogger.end_progress(f"Loaded task {ep.name}: registered as manual-only (no trigger)")
+                    self.mylogger.end_progress(f"Loaded task {ep.name}:(manual-only, no trigger)")
                     return
 
                 # APScheduler registration
