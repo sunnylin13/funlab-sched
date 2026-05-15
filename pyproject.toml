@@ -9,7 +9,7 @@ repository = "https://github.com/sunnylin13/funlab-sched"
 packages = [{include = "funlab"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.13"
 apscheduler = "^3.10.1"
 flask-wtf = "^1.2.1"
 funlab-flaskr = {path = "../funlab-flaskr", develop = true}  # "^0.3.1"
