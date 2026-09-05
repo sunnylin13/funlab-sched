@@ -15,8 +15,6 @@ dependencies = [
 Repository = "https://github.com/sunnylin13/funlab-sched"
 
 [project.optional-dependencies]
-# Optional: install funlab-sse to enable SSE job-status notifications.
-# Without it SchedService still works; notifications are simply suppressed.
 sse = ["funlab-sse"]
 
 [project.entry-points."funlab_plugin"]
@@ -25,27 +23,18 @@ SchedService = "funlab.sched.service:SchedService"
 [dependency-groups]
 dev = ["pytest>=8.3.0,<10"]
 
-# Cross-repo dependencies resolve via the workspace root's [tool.uv.sources];
-# member-level sources are intentionally omitted (each repo is its own git root,
-# so `workspace = true` here would bind to this repo, not the outer workspace).
+[tool.uv.sources]
+funlab-flaskr = { workspace = true }
+funlab-sse = { workspace = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# PEP 420 namespace package (shared 'funlab' namespace).
 packages = ["funlab"]
 
-# Declare plugin-level load order understood by funlab plugin_manager's
-# PluginDependencyResolver.  SSEService is optional: if not installed,
-# SchedService loads fine with SSE notifications disabled.
 [tool.funlab_plugin_metadata.SchedService]
-# SchedService must load at startup: it starts a BackgroundScheduler thread,
-# registers task-management routes, and adds an admin menu item.
 load_mode = "startup"
 security_mode = "required"
-optional_dependencies = ["SSEService"]   # load SSEService first when present
-
-# remove remark, if you want to test sample task
-# [project.entry-points."funlab_sched_task"]
-# SayHello = "funlab.sched.task:SayHelloTask"
+optional_dependencies = ["SSEService"]
