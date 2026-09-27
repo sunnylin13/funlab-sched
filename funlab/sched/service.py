@@ -251,6 +251,16 @@ class SchedService(ServicePlugin):
         """
         keep tracing of job execution
         """
+        # SCH-13: 本 listener 由 APScheduler 主循環執行緒呼叫；拋出的例外會被
+        # _dispatch_event 吞成 log（實證 E2），造成狀態更新靜默遺失。整段自我吸收。
+        try:
+            self._handle_listener_event(event)
+        except Exception as e:
+            self.mylogger.warning(
+                f"[SchedService] listener error on {event!r}: {type(e).__name__}: {e}"
+            )
+
+    def _handle_listener_event(self, event):
         event_type = None
         exception = None
         if isinstance(event, JobSubmissionEvent):
@@ -271,18 +281,21 @@ class SchedService(ServicePlugin):
             else:
                 event_type = 'Executed'
                 message = f"完成: {datetime.now().isoformat(timespec='seconds')}"
-            scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time.strftime("%y-%m-%d %H:%M:%S")
+            scheduled_run_time = datetime.now()  # log as completed time, not event.scheduled_run_time
             retval = event.retval
-            task = self.sched_tasks[event.job_id.replace('_M', '')]
-            summit_userid = task.last_manual_exec_info.get('summit_userid', None)
-            is_manual = task.last_manual_exec_info.get('is_manual', False)
-            if is_manual:
-                self.send_user_task_notification(task.name, message=message, target_userid=summit_userid)
-                task.last_manual_exec_info.update({
-                    'result_status': event_type,
-                    'result_time': datetime.now().isoformat(timespec='seconds'),
-                    'exception': str(exception) if exception else '',
-                })
+            # SCH-01: '_M' 是手動 job 的後綴，只准剝後綴（removesuffix）；
+            # 查不到母任務（已移除/未知 id）時靜默跳過，不得拋 KeyError（實證 E2/E3）。
+            base_task = self.sched_tasks.get(event.job_id.removesuffix('_M'))
+            if base_task:
+                summit_userid = base_task.last_manual_exec_info.get('summit_userid', None)
+                is_manual = base_task.last_manual_exec_info.get('is_manual', False)
+                if is_manual:
+                    self.send_user_task_notification(base_task.name, message=message, target_userid=summit_userid)
+                    base_task.last_manual_exec_info.update({
+                        'result_status': event_type,
+                        'result_time': datetime.now().isoformat(timespec='seconds'),
+                        'exception': str(exception) if exception else '',
+                    })
 
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
             if event.code == EVENT_SCHEDULER_PAUSED:
@@ -306,14 +319,13 @@ class SchedService(ServicePlugin):
                 if job:  # Guard against ``job`` being None.
                     kwargs = job.kwargs
                     args = job.args
-            elif task:=self.sched_tasks.get(event.job_id.replace('_M', ''), None):  # _M is run manually, one time task
+            elif (task := self.sched_tasks.get(event.job_id.removesuffix('_M'), None)):  # SCH-01: _M is run manually, one time task
                 kwargs = task.last_manual_exec_info.get('kwargs', None)
                 args = task.last_manual_exec_info.get('args', None)
 
             if task:  # Only update status when the task still exists.
                 task.last_status = (f"{event_type} at:{scheduled_run_time}") \
                                     + (f", kwargs={kwargs}" if (kwargs) else "") \
-                                    + (f", args={args}" if (args) else "") \
                                     + (f", ret={retval}" if retval is not None else "") \
                                     + (f", exception: {exception}" if exception else "")
 

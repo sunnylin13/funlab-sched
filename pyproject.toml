@@ -23,6 +23,9 @@ SchedService = "funlab.sched.service:SchedService"
 [dependency-groups]
 dev = ["pytest>=8.3.0,<10"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.uv.sources]
 funlab-flaskr = { workspace = true }
 funlab-sse = { workspace = true }
