@@ -59,3 +59,12 @@ def test_failed_manual_job_records_exception(stub_service):
 def test_unknown_job_id_is_ignored_not_raised(stub_service):
     SchedService._listener_all_event(stub_service, make_event('GhostJob'))
     assert stub_service.sched_tasks == {}
+
+
+def test_listener_swallows_internal_exceptions(stub_service):
+    """事件處理內部炸任何例外，例外不得逃出 listener（SCH-13）。"""
+    stub_service.sched_tasks = None      # 強迫內部 AttributeError（.get on None）
+    # PLAN 原文 SchedulerEvent(code=0, job_id=...) 為 APScheduler 4.x 簽名且 code=0
+    # 不會觸及 sched_tasks；改以 JobExecutionEvent（3.x 簽名）強制走內部存取路徑
+    SchedService._listener_all_event(stub_service, make_event('AnyJob'))
+    assert any(m[0] == 'warning' for m in stub_service.mylogger.messages)

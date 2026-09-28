@@ -27,6 +27,30 @@ if TYPE_CHECKING:
     from funlab.flaskr.app import FunlabFlask
     from funlab.sched.task import SchedTask
 
+
+def build_kwargs_from_form(task: 'SchedTask', formdata) -> tuple[dict | None, dict]:
+    """SCH-03：以任務自己的 form_class 驗證 formdata 並轉出正確型別的 kwargs。
+
+    回傳 (kwargs, errors)：驗證失敗時 kwargs 為 None。
+    跳過非資料欄位（CSRF/id/name 由 task_def 自行管理）。
+    formdata 允許傳純 dict（測試用）：正規化為 MultiDict 以滿足 wtforms 介面。
+    """
+    if formdata is not None and not hasattr(formdata, 'getlist'):
+        from werkzeug.datastructures import MultiDict
+        formdata = MultiDict(formdata)
+    form = task.form_class(formdata)
+    if not form.validate():
+        return None, form.errors
+    kwargs = {}
+    for f in fields(task):
+        if f.name in ('id', 'name'):
+            continue
+        field_instance = getattr(form, f.name, None)
+        if field_instance is not None and hasattr(field_instance, 'data'):
+            kwargs[f.name] = field_instance.data
+    return kwargs, {}
+
+
 class SchedService(ServicePlugin):
     # Declare optional module-level dependencies so plugin_manager can warn
     # instead of crashing when these are missing.
@@ -41,6 +65,7 @@ class SchedService(ServicePlugin):
         self._task_lock = threading.Lock()
         self._scheduler = BackgroundScheduler()
         self.sched_tasks: dict[str, SchedTask] = {}
+        self._task_build: dict[str, 'SchedTask'] | None = None   # SCH-04: loader 專屬建構中副本
         self._loader_started = False
         self._background_task_loading = True
         # Set when all tasks are registered and the APScheduler thread is running.
@@ -103,6 +128,7 @@ class SchedService(ServicePlugin):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self._load_tasks()
+            self._publish_tasks()   # SCH-04: 全部載入完成後一次性發佈快照
             self.start()   # _on_start() starts APScheduler with paused=False.
         except Exception as e:
             self.mylogger.error(
@@ -186,6 +212,28 @@ class SchedService(ServicePlugin):
         for ep in task_eps:
             self._load_single_task(ep)
 
+    def _stage_task(self, task: 'SchedTask'):
+        """SCH-04：loader 執行緒專用——寫入建構中副本，不直接動讀者可見的 dict。"""
+        if self._task_build is None:
+            self._task_build = dict(self.sched_tasks)
+        self._task_build[task.id] = task
+
+    def _unstage_task(self, task_id: str):
+        """SCH-04：loader 執行緒專用——在建構中副本上移除。"""
+        if self._task_build is None:
+            self._task_build = dict(self.sched_tasks)
+        self._task_build.pop(task_id, None)
+
+    def _publish_tasks(self):
+        """SCH-04：loader 執行緒專用——把建構中副本原子置換出去（dict 名稱綁定是原子操作）。"""
+        if self._task_build is not None:
+            self.sched_tasks = self._task_build   # 單一賦值，讀者永遠看到完整快照
+            self._task_build = None
+
+    def _snapshot_tasks(self) -> list:
+        """SCH-04：Web/其他讀端專用——先捕獲引用再迭代，永不與寫者共享同一 dict。"""
+        return list(self.sched_tasks.values())
+
     def _load_single_task(self, ep):
             # Phase 1: class loading (may trigger module-level imports on first call).
             self.mylogger.progress(f"Loading task {ep.name} ...")
@@ -218,7 +266,7 @@ class SchedService(ServicePlugin):
                 # it is available for manual execution via the UI/API.
                 if not task.task_def.get('trigger'):
                     task.last_status = 'Loaded (manual-only)'
-                    self.sched_tasks[task.id] = task
+                    self._stage_task(task)   # SCH-04: 寫入建構中副本，不直接動讀者可見的 dict
                     self.mylogger.end_progress(f"Loaded task {ep.name}:(manual-only, no trigger)")
                     return
 
@@ -241,11 +289,11 @@ class SchedService(ServicePlugin):
 
     def _align_task_job(self, old_task:SchedTask, new_task:SchedTask, new_job:Job):
         if old_task:
-            self.sched_tasks.pop(old_task.id, None)
+            self._unstage_task(old_task.id)   # SCH-04
         if new_task and new_job:
             new_task.id = new_job.id
             setattr(new_task, "job", new_job)
-            self.sched_tasks[new_task.id] = new_task
+            self._stage_task(new_task)        # SCH-04
 
     def _listener_all_event(self, event):
         """
@@ -380,27 +428,18 @@ class SchedService(ServicePlugin):
                     )
                     return
 
-                submitted_form = task.form_class(request.form)
-                if not submitted_form.validate():
+                kwargs, errors = build_kwargs_from_form(task, request.form)
+                if kwargs is None:
                     self.mylogger.warning(
-                        f"Task {task.name} form validation failed: {submitted_form.errors}"
+                        f"Task {task.name} form validation failed: {errors}"
                     )
                     self.send_user_task_notification(
                         task.name,
-                        f"任務參數驗證失敗: {submitted_form.errors}",
+                        f"任務參數驗證失敗: {errors}",
                         target_userid=current_user.id
                     )
                     return
-
-                task_kwargs = {}
-                for field in fields(task):
-                    # Safely access the data attribute of bound fields
-                    field_instance = getattr(submitted_form, field.name, None)
-                    if field_instance and hasattr(field_instance, 'data'):
-                        arg_value = field_instance.data
-                    else:
-                        arg_value = None
-                    task_kwargs.update({field.name: arg_value})
+                task_kwargs = kwargs   # SCH-03: 與 save 路徑共用同一份驗證+轉型契約
 
                 # Apply submitted args to the task instance so dataclass __repr__ and
                 # bound-method representations won't fail when they access fields
@@ -466,29 +505,43 @@ class SchedService(ServicePlugin):
                 )
 
             def save_as_default_args(task:SchedTask):
-                task_kwargs = {}
-                for field in fields(task):
-                    if arg_value := request.form.get(field.name, None):
-                        task_kwargs.update({field.name: arg_value})
+                # SCH-03: 经由 form_class 驗證+轉型；髒字串（如 'false'）不再直達排程任務
+                kwargs, errors = build_kwargs_from_form(task, request.form)
+                if kwargs is None:
+                    self.mylogger.warning(
+                        f"Task {task.name} save args rejected: form validation failed: {errors}"
+                    )
+                    self.send_user_task_notification(
+                        task.name,
+                        f"參數驗證失敗，未儲存預設值: {errors}",
+                        target_userid=current_user.id
+                    )
+                    return
                 job = self._scheduler.get_job(task.id)
                 if job:
-                    job.modify(
-                        kwargs=task_kwargs,
-                    )
-                task.task_def.update({"kwargs": task_kwargs})
+                    job.modify(kwargs=kwargs)
+                task.task_def.update({"kwargs": kwargs})
 
             submitted_task_id=request.form.get('id')
             if 'run_task' in request.form:
-                run_task(self.sched_tasks[submitted_task_id])
+                target = self.sched_tasks.get(submitted_task_id)   # SCH-04 連帶 SCH-10：未知 id 不再 KeyError→500
+                if target is None:
+                    self.mylogger.warning(f"Unknown task id in POST: {submitted_task_id!r}")
+                else:
+                    run_task(target)
                 # Originally this only closed the dialog without refreshing the page.
                 # return make_response('', 204)  # No Content
             elif 'save_args' in request.form:
-                save_as_default_args(self.sched_tasks[submitted_task_id])
+                target = self.sched_tasks.get(submitted_task_id)   # SCH-04 連帶 SCH-10
+                if target is None:
+                    self.mylogger.warning(f"Unknown task id in POST: {submitted_task_id!r}")
+                else:
+                    save_as_default_args(target)
                 # Originally this only closed the dialog without refreshing the page.
                 # return make_response('', 204)  # No Content
             tasks = []
             forms = {}
-            for task in self.sched_tasks.values():
+            for task in self._snapshot_tasks():   # SCH-04: 先捕獲引用再迭代
                 tasks.append(task)
                 form = request.form if (request.form and task.id == submitted_task_id) else None
                 forms[task.id] = task.form_class(formdata=form)  # Bind form data only for the submitted task to avoid cross-form contamination.
@@ -529,8 +582,19 @@ class SchedService(ServicePlugin):
         self._scheduler.start(paused=False)
 
     def _on_stop(self):
-        """Shut down the APScheduler (waits for running jobs to finish)."""
-        self._scheduler.shutdown(wait=True)
+        """Shut down the APScheduler.
+
+        SCH-05: wait=False——不在此線程無限等 job（plugin._run_stop_safely 只有 5s 額度，
+        等待與否不改變「不殺任務」的事實，因為 apscheduler 線程由直譯器 join）。
+        真正要「等任務跑完再退」靠關機序：先在 Web 停止提交、APScheduler 線程自然 join；
+        並把 systemd TimeoutStopSec 設到大於最長任務時間（部署文件，另由 OPS 執行）。
+        從未 start 過（載入失敗路徑）時 shutdown() 會拋 SchedulerNotRunningError（實證 E5），吞掉。
+        """
+        from apscheduler.schedulers.base import SchedulerNotRunningError
+        try:
+            self._scheduler.shutdown(wait=False)
+        except SchedulerNotRunningError:
+            self.mylogger.info("[SchedService] scheduler was never started; nothing to shut down")
 
     def _on_reload(self):
         """Reload scheduler configuration and tasks.
@@ -541,8 +605,17 @@ class SchedService(ServicePlugin):
         # Ensure any in-progress loader work is complete before rebuilding jobs.
         self._tasks_loaded.wait()
         self._tasks_loaded.clear()
+        # SCH-06 防護：plugin 基底若跳過了 _on_stop（_stop_executed 殘留），
+        # 這裡自行補 shutdown，否則 configure() 必拋 SchedulerAlreadyRunningError（實證 E6）。
+        if self._scheduler.running:
+            from apscheduler.schedulers.base import SchedulerNotRunningError
+            try:
+                self._scheduler.shutdown(wait=False)
+            except SchedulerNotRunningError:
+                pass
         self._load_config()
         self._load_tasks()   # synchronous during manual reload
+        self._publish_tasks()   # SCH-04: 同步載入完成後一次性發佈快照
         self._tasks_loaded.set()
 
     def _perform_health_check(self) -> bool:
