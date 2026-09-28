@@ -51,6 +51,39 @@ def build_kwargs_from_form(task: 'SchedTask', formdata) -> tuple[dict | None, di
     return kwargs, {}
 
 
+# SCH-07: 多進程 WSGI 部署器名單——每個 worker 各起一份排程器，任務會被重複執行。
+_MULTI_PROCESS_WSGI = {'gunicorn', 'uwsgi'}
+
+
+def apply_plan(task_def: dict, plan: dict | None) -> dict:
+    """SCH-14：plan_schedule() 回傳值**覆寫** config 的 task_def 同名鍵（就地 update）。
+
+    語意契約：plan 贏——config.toml 寫了 trigger/hour 也会被 plan 覆寫；
+    要在 config 固定排程，plan_schedule 必須回傳 falsy。
+    """
+    if plan:
+        task_def.update(plan)
+    return task_def
+
+
+def safe_add_manual_job(service, task, one_time_task: dict, notify_userid):
+    """SCH-10：手動執行 add_job 的競態防護。
+
+    兩個請求可同時通過 get_job 檢查再同時 add_job → ConflictingIdError → 500。
+    此處捕獲衝突：記警告＋通知提交者「已在佇列中」，不讓 500 炸到頁面。
+    """
+    from apscheduler.jobstores.base import ConflictingIdError
+    try:
+        service._scheduler.add_job(**one_time_task)
+        return True
+    except ConflictingIdError:
+        service.mylogger.warning(f"Task {task.name} 併發重複提交被拒")
+        service.send_user_task_notification(
+            task.name, "任務已在佇列中（併發提交），略過此次",
+            target_userid=notify_userid)
+        return False
+
+
 class SchedService(ServicePlugin):
     # Declare optional module-level dependencies so plugin_manager can warn
     # instead of crashing when these are missing.
@@ -96,7 +129,11 @@ class SchedService(ServicePlugin):
                     plugin_name=self.name,
                 )
                 # Fallback: if expected hooks are missed, still start much later.
-                threading.Timer(180.0, self._start_loader_thread_once).start()
+                # SCH-12: Timer 必須 daemon——非 daemon Timer 讓進程退出最多延遲 180s
+                # （實證 E11），甚至踩出 SCH-05 的 systemd SIGKILL 窗口。
+                fallback_timer = threading.Timer(180.0, self._start_loader_thread_once)
+                fallback_timer.daemon = True
+                fallback_timer.start()
             else:
                 self._start_loader_thread_once()
         else:
@@ -254,8 +291,8 @@ class SchedService(ServicePlugin):
                 # If task config explicitly disables the task, skip registration.
                 disabled = task.task_config.get('disable', False)
 
-                if (next_plan := task.plan_schedule()):
-                    task.task_def.update(next_plan)
+                # SCH-14: 經 apply_plan 明確表達「plan 覆寫 config」語意
+                apply_plan(task.task_def, task.plan_schedule())
 
                 if disabled:
                     self.mylogger.end_progress(f"Skipped task {ep.name}: disabled in config")
@@ -441,15 +478,11 @@ class SchedService(ServicePlugin):
                     return
                 task_kwargs = kwargs   # SCH-03: 與 save 路徑共用同一份驗證+轉型契約
 
-                # Apply submitted args to the task instance so dataclass __repr__ and
-                # bound-method representations won't fail when they access fields
-                # (e.g. repr(bound_method) can include repr(self)).
-                for k, v in task_kwargs.items():
-                    try:
-                        setattr(task, k, v)
-                    except Exception:
-                        # Ignore if attribute cannot be set; we only attempt best-effort
-                        pass
+                # SCH-11（終態）: 不再 setattr 覆寫長驻共享實例——kwargs 經
+                # one_time_task['kwargs'] → _execute_with_hooks(**kwargs) → execute(**kwargs)
+                # 正式傳遞；實例欄位不被「最後一次手動提交」永久污染。
+                # 抽樣佐證（PR 描述附 grep）：finfun-fundmgr BookKeeping/Reconcile、
+                # finfun-finfetch 各 execute 皆經參數列取値，不讀 self.<業務欄位>。
 
                 # Avoid queueing the same manual-run job more than once.
                 manual_job_id = task.task_def['id'] + '_M'
@@ -498,7 +531,10 @@ class SchedService(ServicePlugin):
                     'result_time': '',
                     'exception': '',
                 })
-                self._scheduler.add_job(**one_time_task)
+                # SCH-10: add_job 競態防護（兩請求同過 get_job 檢查 → ConflictingIdError 不再 500）
+                if not safe_add_manual_job(self, task, one_time_task,
+                                           notify_userid=current_user.id):
+                    return
                 self.mylogger.info(
                     f"Task {task.name} manually queued: id={manual_job_id}, run_at={run_at}, "
                     f"func={getattr(task.task_def.get('func'), '__qualname__', task.task_def.get('func'))}, kwargs={task_kwargs}"
@@ -578,7 +614,22 @@ class SchedService(ServicePlugin):
         return self._scheduler.scheduled_job
 
     def _on_start(self):
-        """Start the APScheduler background scheduler."""
+        """Start the APScheduler background scheduler.
+
+        SCH-07: 每個 WSGI worker process 各有一份 SchedService；多進程部署器
+        （gunicorn/uwsgi 多 worker）下同一 cron 任務會被重複執行（記憶體 jobstore
+        無跨進程去重）。PM 裁示（2026-09-28）正式棧為 waitress 單進程，故多進程
+        WSGI 預設 fail-closed 拒跑；明示 ALLOW_MULTI_WORKER_SCHEDULER=true 可放行。
+        """
+        wsgi = str(self.app.config.get('WSGI', 'flask')).lower()
+        allow_multi = bool(self.plugin_config.get('ALLOW_MULTI_WORKER_SCHEDULER', False))
+        if wsgi in _MULTI_PROCESS_WSGI and not allow_multi:
+            self.mylogger.error(
+                f"[SchedService] 偵測到 WSGI={wsgi}：多 worker 會使排程任務重複執行，"
+                "排程器已拒絕啟動。請改用單進程 WSGI（waitress，現況正式配置）或設 "
+                "[SchedService] ALLOW_MULTI_WORKER_SCHEDULER=true 並自行確保單 worker。"
+            )
+            return
         self._scheduler.start(paused=False)
 
     def _on_stop(self):

@@ -153,8 +153,22 @@ class SchedTask(_Configuable, ABC):
                 )
             raise
 
+    def _validate_runtime_executable(self):
+        """SCH-08：非 default 執行器（processpool）對綁定方法任務必然 pickle 失敗。
+
+        排入的 func 是 ``task._execute_with_hooks`` 綁定方法（持 task→sched 引用），
+        processpool 需序列化 → ``TypeError: Schedulers cannot be serialized``（實證 E8）。
+        於每次執行前做一次字串判斷，設定漂移時日誌留下明確警告而非 executor 棧。
+        """
+        executor = self.task_def.get('executor', 'default')
+        if executor and str(executor) != 'default':
+            self.mylogger.warning(
+                f"[{self.name}] executor='{executor}' 非 threadpool default；"
+                "processpool 不支援綁定方法任務（pickle 必掛），請改回 default")
+
     def prepare_runtime(self):
         """Optional runtime warmup hook; override in subclasses for deferred init."""
+        self._validate_runtime_executable()
         return None
 
     def __getattr__(self, name):
@@ -215,8 +229,13 @@ class SchedTask(_Configuable, ABC):
         return self.task_def.get('kwargs', {})
 
     def plan_schedule(self)->dict:
-        """subclass provided so SchedSevice will call when config no 'trigger' defined,
-           to let 'Task' provide 'trigger shchedule' at runtime according to current datetime."""
+        """runtime 動態排程 hook。
+
+        載入時 SchedService **無條件**呼叫本方法（SCH-14，經 service.apply_plan）；
+        回傳 truthy dict 會**覆寫** config.toml 同名的 task_def 鍵（含 trigger/hour/minute）。
+        要在 config 固定排程，請讓本方法回傳 None/falsy；要動態排程，config 的 trigger
+        設定不可信，以本方法為準。
+        """
         return None
 
     @abstractmethod

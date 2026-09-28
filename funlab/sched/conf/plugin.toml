@@ -1,6 +1,9 @@
 [SchedService]
     BACKGROUND_TASK_LOADING = true  # false: load tasks synchronously during SchedService init
     # jobstores = {db = { type = 'sqlalchemy', url='sqlite:///sched_tasks.db'} ,mongo = {'type' = 'mongodb'}}  # default is in memory, not persist
-    executors = {default = {type = 'threadpool', max_workers = 20}, processpool = {type='processpool', max_workers=5}}
-    job_defaults = {coalesce=true, max_instances=3}
+    # 僅提供 threadpool：任務 func 是綁定方法（持 scheduler 引用），processpool 必然 pickle 失敗（SCH-08）
+    executors = {default = {type = 'threadpool', max_workers = 20}}
+    # misfire_grace_time=300：重啟/暫停 5 分鐘內的遲到任務補跑一次（SCH-08；APScheduler 裸預設僅 1s）
+    # max_instances=1：同一任務不並發（SCH-09）；確需併發的任務在自己的 task.toml 明示覆寫
+    job_defaults = {coalesce=true, max_instances=1, misfire_grace_time=300}
     timezone = 'Asia/Taipei'  # timezone must set correctly, otherwise will cause wrong excution time for job
