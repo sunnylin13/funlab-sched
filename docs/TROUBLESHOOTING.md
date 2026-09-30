@@ -1,6 +1,6 @@
 # Funlab-Sched 疑難排解
 
-依症狀排解。指令預設已 `source ~/.venv/fund13/bin/activate`。
+依症狀排解。指令預設已 `source ~/workspaces/fund13/.venv/bin/activate`。
 
 ## 診斷指令速查
 
@@ -46,7 +46,7 @@ cd ~/workspaces/fund13/finfun && python run.py 2>&1 | grep -E "Loading task|Sche
    仍看不到 → 檢查 venv 內 metadata：
 
    ```bash
-   cat ~/.venv/fund13/lib/python3.12/site-packages/your_package-*.dist-info/entry_points.txt
+   cat ~/workspaces/fund13/.venv/lib/python3.12/site-packages/your_package-*.dist-info/entry_points.txt
    ```
 
    內容過舊 → `pip uninstall your_package -y && pip install -e .`。

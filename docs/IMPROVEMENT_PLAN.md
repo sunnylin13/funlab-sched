@@ -2,7 +2,7 @@
 
 > 讀者：fund13-dev-coder。本文件每項改善含：(a) 問題影響 (b) 優先級 (c) 目標檔/函式
 > (d) 完整修正後程式碼 (e) 完整 pytest (f) 驗證指令與預期 (g) 風險。
-> 所有「實證」均為本環境（`~/.venv/fund13`，Python 3.12，APScheduler 3.11.3）實跑輸出，
+> 所有「實證」均為本環境（`~/workspaces/fund13/.venv`，Python 3.12，APScheduler 3.11.3）實跑輸出，
 > 探針腳本不啟動正式服務、不碰券商/正式庫。
 > 開發方式依專案慣例：獨立 branch，不可直接改 main；完成停在分支等 review，不自行合併。
 > **實施狀態（2026-09-28 對帳）**：SCH-01～16 已全數合併 main（944e3ec SCH-01/02；cae4270 SCH-03/04/05/06/13；248a530 SCH-07/08/09/10/11/12/14/16——SCH-07 依 Q6 按 waitress 單進程前提實作；SCH-15 為本檔 docs 整併記錄）；qa2-supp 補測 f3ab750。已部署正式服務。測試基線現況 **38 passed**。本文 (a) 段描述【修復前】缺陷。
@@ -234,7 +234,7 @@ def test_unknown_job_id_is_ignored_not_raised(stub_service):
 **(f) 驗證指令與預期**
 
 ```bash
-source ~/.venv/fund13/bin/activate
+source ~/workspaces/fund13/.venv/bin/activate
 cd ~/workspaces/fund13/funlab-sched
 python -m pytest tests/test_listener_job_id.py -v
 # 修正前：test_auto_job.../test_manual_M.../test_unknown... 3 紅（KeyError）
@@ -370,7 +370,7 @@ def test_public_exports():
 **(f) 驗證指令與預期**
 
 ```bash
-source ~/.venv/fund13/bin/activate
+source ~/workspaces/fund13/.venv/bin/activate
 cd ~/workspaces/fund13/funlab-sched
 python -m pytest -q          # 預期：全綠（SCH-01 尚未修時 test_listener_job_id 允許紅，其餘綠）
 python -m pytest tests/test_imports.py -q   # 1 passed
@@ -1339,7 +1339,7 @@ def test_plan_merges_over_config(stub_service):
 
 已執行：刪 `COMPLETION_SUMMARY.md`；`ENTRY_POINTS_TROUBLESHOOTING.md`+`TROUBLESHOOTING_FLOWCHART.md`
 +`QUICK_REFERENCE.md` 有價值內容併入 `TROUBLESHOOTING.md`；`DEVELOPMENT_GUIDE.md`/`README.md`
-重寫為「可直接複製的最小任務 + PEP 621 entry point + uv/pip -e 安裝（本環境 `~/.venv/fund13`）」；
+重寫為「可直接複製的最小任務 + PEP 621 entry point + uv/pip -e 安裝（本環境 `~/workspaces/fund13/.venv`）」；
 簡體字全部轉正體；`[tool.poetry.plugins...]` 全部改正為 `[project.entry-points."funlab_sched_task"]`
 （實查 finfun-* pyproject 均為 PEP 621 寫法）；`metadata {'type': 'StringField'}` 字串寫法恢復為
 推薦寫法（task.py 註解與 STRING_TYPE_MAPPING 佐證）；`CalcQuantV2` 等虛構任務名移除；
