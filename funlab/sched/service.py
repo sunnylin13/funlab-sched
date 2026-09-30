@@ -119,11 +119,14 @@ class SchedService(ServicePlugin):
                 name='sched-task-loader',
                 daemon=True,
             )
-            # Start task loader after plugin registration is effectively complete
-            # (PluginManagerView hook), to avoid import races on finfun.core.entity.
+            # Start task loader after plugin registration is confirmed complete
+            # (R10: 明確 hook plugins_registration_complete，取代對
+            # PluginManagerView plugin_name 的字串匹配脆弱握手；見
+            # funlab-libs docs/PLUGIN_LIFECYCLE.md §2 矩陣)，to avoid import
+            # races on finfun.core.entity.
             if hasattr(self.app, 'hook_manager'):
                 self.app.hook_manager.register_hook(
-                    'plugin_after_init',
+                    'plugins_registration_complete',
                     self._hook_start_loader_after_fundmgr,
                     priority=5,
                     plugin_name=self.name,
@@ -154,9 +157,9 @@ class SchedService(ServicePlugin):
             self._loader_thread.start()
 
     def _hook_start_loader_after_fundmgr(self, context):
-        plugin_name = context.get('plugin_name')
-        if plugin_name in {'pluginmanager', 'PluginManagerView'}:
-            self._start_loader_thread_once()
+        # R10：plugins_registration_complete 為一次性全域 hook（全部 plugin
+        # 註冊完成後由 FunlabFlask 恰觸發一次），不再比對 plugin_name。
+        self._start_loader_thread_once()
 
     def _run_task_loading(self):
         """Discover + load tasks, then start APScheduler (sync or background thread)."""
