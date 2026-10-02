@@ -51,6 +51,24 @@ def build_kwargs_from_form(task: 'SchedTask', formdata) -> tuple[dict | None, di
     return kwargs, {}
 
 
+def plain_exception_for(task, exception) -> str:
+    """t_b6d1f78d P3：任務若有 humanize_exception 鉤子，取其白話一句。
+
+    契約（fund13/handoff）：任務端 ``humanize_exception(exc) -> str | None``；
+    回 None／無鉤子／鉤子自身拋例外 → 空字串（呈現層回落原始 exception 文本，
+    既有行為零變動；SCH-13 自我吸收紀律）。
+    """
+    if exception is None:
+        return ''
+    try:
+        fn = getattr(task, 'humanize_exception', None)
+        if fn is None:
+            return ''
+        return str(fn(exception) or '')
+    except Exception:
+        return ''
+
+
 # SCH-07: 多進程 WSGI 部署器名單——每個 worker 各起一份排程器，任務會被重複執行。
 _MULTI_PROCESS_WSGI = {'gunicorn', 'uwsgi'}
 
@@ -365,6 +383,8 @@ class SchedService(ServicePlugin):
             elif event.exception:
                 event_type = 'Failed'
                 exception = event.exception
+                # t_b6d1f78d P3：任務有 humanize_exception 鉤子且可映射 →
+                # 通知以白話一句開頭、原始 exception 附後作明細；否則原樣。
                 message = f"失敗: {exception}"
             else:
                 event_type = 'Executed'
@@ -378,11 +398,17 @@ class SchedService(ServicePlugin):
                 summit_userid = base_task.last_manual_exec_info.get('summit_userid', None)
                 is_manual = base_task.last_manual_exec_info.get('is_manual', False)
                 if is_manual:
+                    # t_b6d1f78d P3：任務提供 humanize_exception 鉤子且可映射
+                    # → 通知改「白話一句＋原始明細」；無法映射 → 原樣。
+                    plain = plain_exception_for(base_task, exception)
+                    if plain:
+                        message = f"{plain}\n—— 原始明細 ——\n{exception}"
                     self.send_user_task_notification(base_task.name, message=message, target_userid=summit_userid)
                     base_task.last_manual_exec_info.update({
                         'result_status': event_type,
                         'result_time': datetime.now().isoformat(timespec='seconds'),
                         'exception': str(exception) if exception else '',
+                        'exception_plain': plain,
                     })
 
         elif isinstance(event, SchedulerEvent):  # this is apscheduler service event, influence all tasks
@@ -422,6 +448,8 @@ class SchedService(ServicePlugin):
                         'result_status': event_type,
                         'result_time': datetime.now().isoformat(timespec='seconds'),
                         'exception': str(exception) if exception else '',
+                        # t_b6d1f78d P3：白話一句（可映射時）；無→空字串回落原始
+                        'exception_plain': plain_exception_for(task, exception),
                     })
 
                 self.mylogger.info(f"Task {event.job_id} {task.last_status}")

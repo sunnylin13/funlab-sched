@@ -54,7 +54,15 @@
                     {% if task.last_manual_exec_info.get('result_time', '') %}
                       <br><small>{{ task.last_manual_exec_info.get('result_time') }}</small>
                     {% endif %}
-                    {% if task.last_manual_exec_info.get('exception', '') %}
+                    {% if task.last_manual_exec_info.get('exception_plain', '') %}
+                      <!-- t_b6d1f78d P3：白話一句＋可展開原始明細 -->
+                      <br><small>{{ task.last_manual_exec_info.get('exception_plain') }}</small>
+                      {% if task.last_manual_exec_info.get('exception', '') %}
+                        <details><summary class="small text-secondary">原始明細</summary>
+                          <small class="text-break">{{ task.last_manual_exec_info.get('exception') }}</small>
+                        </details>
+                      {% endif %}
+                    {% elif task.last_manual_exec_info.get('exception', '') %}
                       <br><small>{{ task.last_manual_exec_info.get('exception') }}</small>
                     {% endif %}
                   {% else %}
