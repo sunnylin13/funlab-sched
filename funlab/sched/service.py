@@ -509,6 +509,16 @@ class SchedService(ServicePlugin):
                     return
                 task_kwargs = kwargs   # SCH-03: 與 save 路徑共用同一份驗證+轉型契約
 
+                # SCH-15（ADR-053 D1）：手動入口單點無條件注入 manually=True。
+                # 契約（比照 SCH-01「_M 後綴＝手動」）：經 run_task 佇列 *_M
+                # job 者即手動——入口語意在服務端釘死、不经表單、不可偽造。
+                # 表單 HiddenField 往返鏈（G1 預設丟失→G2 渲染 value=""→
+                # G3 原樣直傳）曾使手動跑以 manually=''（falsy＝自動場語意）
+                # 執行（t_b378d78c 事故根因 P4）。無條件注入：所有任務
+                # execute 簽名皆收 manually=False 或 **kwargs（Q2 已裁），
+                # 免維護欄位清單；自動場（cron/plan/save_args）不走本漏斗。
+                task_kwargs['manually'] = True
+
                 # SCH-11（終態）: 不再 setattr 覆寫長驻共享實例——kwargs 經
                 # one_time_task['kwargs'] → _execute_with_hooks(**kwargs) → execute(**kwargs)
                 # 正式傳遞；實例欄位不被「最後一次手動提交」永久污染。
@@ -584,6 +594,11 @@ class SchedService(ServicePlugin):
                         target_userid=current_user.id
                     )
                     return
+                # SCH-15（ADR-053 D2）：save 路徑寫入的是**自動 job** 的預設
+                # kwargs——框架恆 pop manually（自動場入口語意＝不帶該鍵，
+                # 由 execute(manually=False) 簽名預設取得）。現況存 '' 屬髒值
+                # （falsy 僥倖正確），且 last_status 顯示誤導（manually: ''）。
+                kwargs.pop('manually', None)
                 job = self._scheduler.get_job(task.id)
                 if job:
                     job.modify(kwargs=kwargs)
