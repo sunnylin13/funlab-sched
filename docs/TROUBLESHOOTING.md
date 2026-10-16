@@ -166,4 +166,4 @@ pip install -e .
 ## 相關
 
 - 開發流程與慣例：[DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md)
-- 已知缺陷與修復計畫：KB `specs/migrations/funlab-sched-IMPROVEMENT_PLAN.md`（SCH-xx 編號沿用）
+- 已知缺陷與修復計畫：KB `dev/migrations/funlab-sched-IMPROVEMENT_PLAN.md`（SCH-xx 編號沿用）
