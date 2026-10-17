@@ -20,6 +20,18 @@ if TYPE_CHECKING:
     from funlab.flaskr.app import FunlabFlask
     from funlab.sched.service import SchedService
 
+# ARCH-LOGGING §4 N4：同任務同日 traceback 去重狀態（程序生命週期即可，
+# 重啟＝重置；鍵＝task name，值＝最近全量輸出日 YYYYMMDD）。
+import threading as _threading
+
+
+def _today_str() -> str:
+    return datetime.date.today().strftime("%Y%m%d")
+
+
+_tb_dedup: dict[str, str] = {}
+_tb_dedup_lock = _threading.Lock()
+
 @dataclass
 class SchedTask(_Configuable, ABC):
     id:str = field(init=False, metadata={'type': 'HiddenField'
@@ -140,7 +152,17 @@ class SchedTask(_Configuable, ABC):
             self.mylogger.info(f"Task {self.name} execution completed")
             return result
         except Exception as e:
-            self.mylogger.error(f"Task {self.name} execution failed: {e}", exc_info=True)
+            # ARCH-LOGGING §4 N4：ERROR 保留（任務失敗＝需人看），traceback 去重
+            # ——同任務同日僅首筆全量，其後單行（日界＝_today_str 變更）。
+            today = _today_str()
+            with _tb_dedup_lock:
+                first_today = _tb_dedup.get(self.name) != today
+                if first_today:
+                    _tb_dedup[self.name] = today
+            self.mylogger.error(
+                f"Task {self.name} execution failed: {e}"
+                + ("" if first_today else "（同任務同日重複失敗，traceback 已去重）"),
+                exc_info=first_today)
             # Trigger task_error hook
             if hasattr(self.sched.app, 'hook_manager'):
                 self.sched.app.hook_manager.call_hook(
