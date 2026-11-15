@@ -68,8 +68,9 @@ def check(specs: dict[str, TaskSpec], *, crontab_lines: list[str],
             rep.missing.append({'source': 'crontab', 'line': line})
 
     # ② Hermes cron jobs：enabled 的要有宣告；宣告的 hermes_job 要在實際清單
+    #    （enabled=false 的宣告＝刻意停用，不參與雙向對账）
     declared_hermes = {s.hermes_job: sid for sid, s in specs.items()
-                       if s.kind == 'hermes' and s.hermes_job}
+                       if s.kind == 'hermes' and s.hermes_job and s.enabled}
     actual_job_ids = {j.get('id') for j in hermes_jobs}
     for j in hermes_jobs:
         if not j.get('enabled'):
@@ -88,7 +89,7 @@ def check(specs: dict[str, TaskSpec], *, crontab_lines: list[str],
 
     # ③ entry-point（inproc 域）：實際要有宣告；宣告的 entry 要在實際清單
     declared_eps = {s.entry: sid for sid, s in specs.items()
-                    if s.kind == 'inproc' and s.entry}
+                    if s.kind == 'inproc' and s.entry and s.enabled}
     for ep in entry_points:
         if ep in declared_eps:
             rep.ok.append({'source': 'entry_point', 'entry': ep,

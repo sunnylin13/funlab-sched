@@ -1,0 +1,10 @@
+# 初始盤點快照：由 scripts/gen_declarations.py 產生（卡 t_bdf4eb9c）。
+# TODO owner 複核 safety／trigger／heartbeat（產生器採最保守預設）。
+id = "inproc.CalcQuant"
+owner = "dev-ops"
+kind = "inproc"
+entry = "CalcQuant"
+
+[safety]
+writes_db = true
+idempotent = false

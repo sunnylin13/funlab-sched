@@ -1,0 +1,16 @@
+# 初始盤點快照：由 scripts/gen_declarations.py 產生（卡 t_bdf4eb9c）。
+# TODO owner 複核 safety／trigger／heartbeat（產生器採最保守預設）。
+id = "exec.test"
+owner = "dev-ops"
+kind = "exec"
+entry = "test -x /home/sunnylin/workspaces/fund13/.venv/bin/python || { echo \"[$(date)] VENV_MISSING /home/sunnylin/workspaces/fund13/.venv/bin/python\" >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_factor_refresh.log 2>&1; exit 1; }; TZ=Asia/Taipei FUND13_CAPITAL_INCREASE_ADJ=true /home/sunnylin/workspaces/fund13/.venv/bin/python -m finfun.factor.refresh_task >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_factor_refresh.log 2>&1"
+legacy_ref = "test -x /home/sunnylin/workspaces/fund13/.venv/bin/python || { echo \"[$(date)] VENV_MISSING /home/sunnylin/workspaces/fund13/.venv/bin/python\" >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_factor_refresh.log 2>&1; exit 1; }; TZ=Asia/Taipei FUND13_CAPITAL_INCREASE_ADJ=true /home/sunnylin/workspaces/fund13/.venv/bin/python -m finfun.factor.refresh_task >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_factor_refresh.log 2>&1"
+
+[safety]
+writes_db = true
+idempotent = false
+
+[trigger]
+type = "cron"
+expr = "10 17 * * *"
+tz = "Asia/Taipei"

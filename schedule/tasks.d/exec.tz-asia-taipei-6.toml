@@ -1,0 +1,16 @@
+# 初始盤點快照：由 scripts/gen_declarations.py 產生（卡 t_bdf4eb9c）。
+# TODO owner 複核 safety／trigger／heartbeat（產生器採最保守預設）。
+id = "exec.tz-asia-taipei-6"
+owner = "dev-ops"
+kind = "exec"
+entry = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/fi_guards.sh gate2 6 >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_fi_guards.log 2>&1"
+legacy_ref = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/fi_guards.sh gate2 6 >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_fi_guards.log 2>&1"
+
+[safety]
+writes_db = true
+idempotent = false
+
+[trigger]
+type = "cron"
+expr = "0 22 * * *"
+tz = "Asia/Taipei"

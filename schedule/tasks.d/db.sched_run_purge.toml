@@ -1,0 +1,17 @@
+# sched_run 保留期清理（manager 2026-11-15 標注：purge 每日排程項納本卡宣告檔）
+# C2（t_79671c59）已在正式庫落地 `sched_run_purge()` 函數體；每日調用路徑
+# （funlab-sched inproc 任務＋DB 連線包裝）尚未存在——接線方案屬後續卡，
+# 故先以 enabled=false 納管登記（防漂移盤點可见、漏跑偵測不誤報）。
+# TODO PM：執行接線卡落地後改 enabled=true 並補 trigger 核對。
+id = "db.sched_run_purge"
+owner = "dev-ops"
+kind = "inproc"
+entry = "SchedRunPurge"
+enabled = false
+legacy_ref = "sql: select sched_run_purge()"
+safety = { writes_db = true, idempotent = true }
+
+[trigger]
+type = "cron"
+expr = "30 2 * * *"
+tz = "Asia/Taipei"
