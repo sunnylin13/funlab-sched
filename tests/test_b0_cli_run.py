@@ -51,9 +51,11 @@ class _Runner:
     def __init__(self, rcs):
         self.rcs = list(rcs)
         self.calls = []
+        self.kws = []
 
     def __call__(self, argv, **kw):
         self.calls.append(argv)
+        self.kws.append(kw)
         rc = self.rcs.pop(0) if self.rcs else 0
         if rc == 'TIMEOUT':
             raise subprocess.TimeoutExpired(argv, kw.get('timeout', 0))
@@ -163,6 +165,32 @@ class TestRetryPolicy:
         assert rc != 0
         assert _rows(tmp_path / 'spool')[0]['status'] == 'timeout'
         assert ('a', 'timeout') in al.sent
+
+
+class TestDeclaredTimeout:
+    """F2（reviewer R1 必修·manager 背書）：宣告欄 timeout_sec 生效（§3.3
+    每任務宣告逾時）。優先序＝呼叫端顯式覆寫 > spec.timeout_sec > 全域預設。"""
+
+    def _captured_timeout(self, tmp_path, spec_body, **kw):
+        decl = _decl(tmp_path, spec_body)
+        rec = RunRecorder(spool_dir=tmp_path / 'spool')
+        runner = _Runner([0])
+        rc = main(['a'], declarations=decl, recorder=rec, alerter=_Alerts(),
+                  runner=runner, sleeper=lambda s: None, **kw)
+        assert rc == 0
+        return runner.kws[0].get('timeout')
+
+    def test_spec_timeout_used_when_no_explicit_override(self, tmp_path):
+        got = self._captured_timeout(tmp_path, OK_SPEC + 'timeout_sec = 7\n')
+        assert got == 7.0
+
+    def test_explicit_kwarg_overrides_spec(self, tmp_path):
+        got = self._captured_timeout(tmp_path, OK_SPEC + 'timeout_sec = 7\n',
+                                     timeout_sec=3)
+        assert got == 3.0
+
+    def test_global_default_when_spec_omits(self, tmp_path):
+        assert self._captured_timeout(tmp_path, OK_SPEC) == 3600.0
 
 
 class TestGuards:

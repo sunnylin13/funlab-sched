@@ -58,7 +58,7 @@ def main(argv=None, *, declarations: str | Path | None = None,
          runner: Callable = subprocess.run,
          sleeper: Callable[[float], None] = time.sleep,
          clock: Callable[[], datetime] = _default_clock,
-         timeout_sec: float = DEFAULT_TIMEOUT_SEC) -> int:
+         timeout_sec: float | None = None) -> int:
     ap = argparse.ArgumentParser(prog='fund13-sched-run')
     ap.add_argument('task_id', nargs='?')
     ap.add_argument('--manual', action='store_true',
@@ -98,6 +98,10 @@ def main(argv=None, *, declarations: str | Path | None = None,
         return 3
 
     trigger_kind = 'manual' if args.manual else 'cron'
+    # F2（reviewer R1 必修·manager 背書）：宣告欄 timeout_sec 生效（§3.3 每任務
+    # 宣告逾時）。優先序＝呼叫端顯式覆寫 > spec.timeout_sec > 全域預設。
+    tmo = float(timeout_sec) if timeout_sec is not None \
+        else float(spec.timeout_sec or DEFAULT_TIMEOUT_SEC)
     max_attempts, backoff = _retry_cfg(spec)
     no_retry = _auto_retry_forbidden(spec)
     scheduled = clock()
@@ -112,16 +116,16 @@ def main(argv=None, *, declarations: str | Path | None = None,
         started = clock()
         try:
             proc = runner(spec.entry, shell=True, capture_output=True,
-                          timeout=timeout_sec)
+                          timeout=tmo)
             rc = int(proc.returncode)
         except subprocess.TimeoutExpired:
             # 結果不可知（子程序可能仍在寫庫）→ 不重試，直接 timeout 終態
             now = clock()
             _safe_write(recorder, mk('timeout', attempt, started, now,
-                                     err=f'外殼逾時 {timeout_sec}s'))
+                                     err=f'外殼逾時 {tmo}s'))
             try:
                 alerter.send(spec.id, 'timeout',
-                             f'{spec.id} 執行逾時 {timeout_sec}s（attempt {attempt}）。'
+                             f'{spec.id} 執行逾時 {tmo}s（attempt {attempt}）。'
                              f'owner={spec.owner}')
             except Exception:
                 pass

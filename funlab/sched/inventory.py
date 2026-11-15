@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from funlab.sched.manifest import TaskSpec, load_dir
+from funlab.sched.manifest import TaskSpec
 
 # cron 行啟頭：@keyword 或 5 欄時間式（首欄為 數字/*/範圍/步進）
 _CRON_HEAD = re.compile(r'^(@\w+|[\d*][\d*,/\-]*\s)')
