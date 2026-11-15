@@ -1,0 +1,16 @@
+# 初始盤點快照：由 scripts/gen_declarations.py 產生（卡 t_bdf4eb9c）。
+# TODO owner 複核 safety／trigger／heartbeat（產生器採最保守預設）。
+id = "exec.usr-sbin-logrotate"
+owner = "dev-ops"
+kind = "exec"
+entry = "/usr/sbin/logrotate --state $HOME/.local/state/logrotate/fund13-cron.state $HOME/workspaces/fund13/finfun/deploy/logrotate/fund13-cron.conf >> $HOME/workspaces/fund13/.deploy/logs/logrotate.log 2>&1"
+legacy_ref = "/usr/sbin/logrotate --state $HOME/.local/state/logrotate/fund13-cron.state $HOME/workspaces/fund13/finfun/deploy/logrotate/fund13-cron.conf >> $HOME/workspaces/fund13/.deploy/logs/logrotate.log 2>&1"
+
+[safety]
+writes_db = true
+idempotent = false
+
+[trigger]
+type = "cron"
+expr = "40 3 * * *"
+tz = "Asia/Taipei"

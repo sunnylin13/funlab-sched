@@ -1,0 +1,8 @@
+# 初始盤點快照：由 scripts/gen_declarations.py 產生（卡 t_bdf4eb9c）。
+# TODO owner 複核 safety／trigger／heartbeat（產生器採最保守預設）。
+id = "hermes.profiles.7e70c902cdf6"
+owner = "profiles"
+kind = "hermes"
+hermes_job = "7e70c902cdf6"
+enabled = true
+legacy_ref = "hermes job 7e70c902cdf6"

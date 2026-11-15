@@ -102,6 +102,85 @@ def safe_add_manual_job(service, task, one_time_task: dict, notify_userid):
         return False
 
 
+def setup_run_record(service, *, decl_dir=None, recorder=None, alerter=None,
+                     start_watchdog: bool = True) -> bool:
+    """B0（t_bdf4eb9c）：接上 sched_run 紀錄鏈＋巡邏緒。只記錄，不搬家。
+
+    - 開關＝plugin config `RUN_RECORD`（預設 true）；關＝完全不接線。
+    - 全自吸：接線任何一環故障→記日誌回 False，不得波及服務啟動
+      （紅線「紀錄寫入失敗不得讓任務失敗」延伸到接線層）。
+    - recorder/alerter 注入口＝測試 seam；正式路徑預設：
+      PGSink url 延遲取 `app.dbmgr.get_db_url()`，缺席自然走 spool 降級。
+    """
+    try:
+        cfg = getattr(service, 'plugin_config', None)
+        if cfg is not None and not cfg.get('RUN_RECORD', True):
+            return False
+        from pathlib import Path as _P
+        from funlab.sched.runrec import PGSink, RunRecorder, SchedRunRecorder
+        from funlab.sched.alerting import Alerter
+        from funlab.sched.missed import Watchdog
+        from funlab.sched.manifest import load_dir
+        from funlab.sched.cli_run import DEFAULT_DECL_DIR
+
+        if recorder is None:
+            def _url():
+                try:
+                    return service.app.dbmgr.get_db_url()
+                except Exception:
+                    return None
+            recorder = RunRecorder(db_sink=PGSink(_url),
+                                   logger=service.mylogger)
+        if alerter is None:
+            channel = 'log'
+            try:
+                if cfg is not None:
+                    channel = cfg.get('ALERT_CHANNEL', 'log')
+            except Exception:
+                pass
+            alerter = Alerter(channel=channel, logger=service.mylogger)
+
+        def _alert_from_record(record):
+            alerter.send(record.task_id, record.status,
+                         f'{record.task_id} {record.status}: '
+                         f'{record.error_summary or ""}')
+
+        SchedRunRecorder(recorder, logger=service.mylogger,
+                         alert_fn=_alert_from_record).attach(service._scheduler)
+        # spool 補匯入（C2 DDL 落地後，降級期間暫存自動回填 PG）
+        try:
+            stats = recorder.replay_spool()
+            if stats.get('replayed'):
+                service.mylogger.info(f'[runrec] spool 補匯入 {stats}')
+        except Exception as e:
+            service.mylogger.warning(f'[runrec] spool 補匯入失敗（不影響服務）: {e}')
+
+        d = _P(decl_dir) if decl_dir else DEFAULT_DECL_DIR
+
+        def _provider():
+            specs, errors = load_dir(d)
+            for err in errors:
+                service.mylogger.warning(f'[runrec] 宣告檔: {err}')
+            return specs
+
+        watchdog = Watchdog(specs_provider=_provider, recorder=recorder,
+                            alerter=alerter, logger=service.mylogger)
+        service._run_recorder = recorder
+        service._run_alert = alerter
+        service._run_watchdog = watchdog
+        if start_watchdog:
+            watchdog.start()
+        return True
+    except Exception as e:
+        try:
+            service.mylogger.error(
+                f'[SchedService] RUN_RECORD 接線失敗（不影響主服務）: '
+                f'{type(e).__name__}: {e}')
+        except Exception:
+            pass
+        return False
+
+
 class SchedService(ServicePlugin):
     # Declare optional module-level dependencies so plugin_manager can warn
     # instead of crashing when these are missing.
@@ -127,6 +206,8 @@ class SchedService(ServicePlugin):
             self._scheduler.add_listener(self._listener_all_event, EVENT_ALL)
             # self._scheduler.add_listener(self._listener_job_start, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
             # self._scheduler.add_listener(self._listener_job_removed, EVENT_JOB_REMOVED)
+        # B0（t_bdf4eb9c）：sched_run 紀錄鏈＋巡邏（RUN_RECORD=false 可停）
+        self._run_record_on = setup_run_record(self)
         self._loader_thread = None
         if self._background_task_loading:
             # Load tasks in a background thread so SchedService.__init__ returns quickly,

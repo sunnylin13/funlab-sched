@@ -20,6 +20,10 @@ sse = ["funlab-sse"]
 [project.entry-points."funlab_plugin"]
 SchedService = "funlab.sched.service:SchedService"
 
+[project.scripts]
+fund13-sched-run = "funlab.sched.cli_run:main"
+sched-inventory-check = "funlab.sched.inventory:main"
+
 [dependency-groups]
 dev = ["pytest>=8.3.0,<10"]
 
