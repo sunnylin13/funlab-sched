@@ -1,0 +1,15 @@
+# B1a 遷移宣告（卡 t_786e5277，報告 §4-B1；裁決 D-261115-3）：A12 CF 缺表／截斷巡檢（只讀，季度）
+# entry／trigger 逐字承自原 crontab（auto 盤點快照 exec.tz-asia-taipei-8.toml）；命令與行為零變化。
+# legacy_ref＝切換後 crontab 行實際子串（inventory 錨＋missed.py hosted-exec 判式）。
+id = "cf_gap_watch.quarterly"
+owner = "dev-ops"
+kind = "exec"
+entry = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/cf_gap_watch.sh >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_cf_gap_watch.log 2>&1"
+legacy_ref = "fund13-sched-run cf_gap_watch.quarterly"
+trigger = { type = "cron", expr = "10 5 1 4,7,10 *", tz = "Asia/Taipei" }
+timeout_sec = 3600
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 2328 }
+safety = { writes_db = false, idempotent = true }
+enabled = true

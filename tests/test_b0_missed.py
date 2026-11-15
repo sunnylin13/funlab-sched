@@ -134,20 +134,28 @@ class TestScopeCoverage:
 
     def test_shipped_snapshot_zero_false_missed(self):
         # reviewer F1 釘選測：真實 schedule/tasks.d 快照＋空 store＋代表時刻
-        # （週一 14:00 TPE）→ 全零誤報。修正前受審態＝2 日窗 26 張假單。
+        # （週一 14:00 TPE）→ 未託管 exec 全零誤報。修正前受審態＝2 日窗 26 張假單。
+        # B1a（卡 t_786e5277 欠債#2 判式）後快照含「hosted-exec」（legacy_ref
+        # 外殼錨）＝終態落表族，受判定屬正解而非誤報：本測拆分兩族各自釘選。
         from funlab.sched.manifest import load_dir
+        from funlab.sched.missed import _is_hosted_exec
         snap = Path(__file__).resolve().parents[1] / 'schedule' / 'tasks.d'
         specs, errors = load_dir(snap)
         assert errors == []
-        # 防空轉假綠：快照必須含足量「enabled＋cron trigger 的 exec 宣告」
-        # （即覆核探針命中的假單來源族）。
-        guards = [s for s in specs.values()
-                  if s.kind == 'exec' and s.enabled
-                  and (s.trigger or {}).get('type') == 'cron']
-        assert len(guards) >= 10
+        cron_execs = [s for s in specs.values()
+                      if s.kind == 'exec' and s.enabled
+                      and (s.trigger or {}).get('type') == 'cron']
+        raw = [s for s in cron_execs if not _is_hosted_exec(s)]
+        hosted = [s for s in cron_execs if _is_hosted_exec(s)]
+        # 防空轉假綠：兩族都必須在快照中足量存在。
+        assert len(raw) >= 7
+        assert len(hosted) >= 7
         got = find_missed(specs, _DictStore(), now=_dt(2026, 11, 16, 14),
                           grace_sec=900)
-        assert [(s.id, e.isoformat()) for s, e in got] == []
+        hit = {s.id for s, _e in got}
+        # 未託管族零誤報（F1(b) 原判）；受單的全部只能是 hosted 族。
+        assert not (hit & {s.id for s in raw})
+        assert hit and hit <= {s.id for s in hosted}
 
 
 class TestFindSilence:

@@ -148,12 +148,25 @@ class PgStore:
 # F1(b) 範圍裁決（manager 2026-11-15 採 reviewer 路線 (b)·背書不 renegotiate）：
 # 漏跑／靜默判定只納「終態會落 sched_run」的任務——誰跑誰記錄、誰記錄誰受判定。
 # - inproc：SchedService 進程內執行＋SchedRunRecorder 終態單筆映射 → 納管。
-# - exec：B0 零搬遷下由 OS crontab 直跑（非排程器），零寫入路徑 → 不納管。
+# - exec（未託管）：OS crontab 直跑原命令（非排程器），零寫入路徑 → 不納管。
 #   納管即天天假紅 missed 直進 append-only 表（覆核探針：2 日窗 26 張假單／
-#   13 任務）。B1a 外殼化（crontab 行改調 fund13-sched-run）後執行即落列，
-#   漏跑抑制自然成立；hosted-exec 的納管判式屬 B1a 卡設計，本層不發明欄位。
+#   13 任務）。
+# - exec（hosted＝已託管外殼，B1a 判式定案，卡 t_786e5277 欠債#2）：
+#   判式三條件全中才納管——
+#     kind=='exec' ∧ legacy_ref 以 HOSTED_EXEC_ANCHOR 開頭 ∧ trigger.type=='cron'。
+#   legacy_ref 錨＝切換後 crontab 行的實際子串（inventory 錨點同源），
+#   「宣告即託管」不成立——只有 crontab 真改呼外殼的行才会用錨格式改宣告；
+#   回退（還原 crontab 備份）時同批还原宣告即退出判定域，不需 enabled=false
+#   假象開關（欠債#2 禁令）。
 # - hermes／os：執行與紀錄在外部系統（Hermes／gateway），B0 不寫列 → 不納管。
 SCHED_CARRIED_KINDS = frozenset({'inproc'})
+HOSTED_EXEC_ANCHOR = 'fund13-sched-run '
+
+
+def _is_hosted_exec(spec: TaskSpec) -> bool:
+    return (spec.kind == 'exec'
+            and spec.legacy_ref.startswith(HOSTED_EXEC_ANCHOR)
+            and (spec.trigger or {}).get('type') == 'cron')
 
 
 def _live_specs(specs: dict[str, TaskSpec], now: datetime) -> dict[str, TaskSpec]:
@@ -161,8 +174,8 @@ def _live_specs(specs: dict[str, TaskSpec], now: datetime) -> dict[str, TaskSpec
     for sid, s in specs.items():
         if not s.enabled:
             continue
-        if s.kind not in SCHED_CARRIED_KINDS:
-            continue   # F1(b)：非排程器承載＝終態不落表，不受漏跑／靜默判定
+        if s.kind not in SCHED_CARRIED_KINDS and not _is_hosted_exec(s):
+            continue   # F1(b)＋B1a 判式：非排程器承載＝終態不落表，不受判定
         lc = s.lifecycle or {}
         if lc.get('kind') == 'once' and lc.get('expires_at'):
             try:
