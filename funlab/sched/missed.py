@@ -9,6 +9,8 @@
 - 心跳：排程層活着就定期寫 `task_id=sched_daemon_heartbeat` 的 ok 紀錄；
   排程層死亡 → 心跳停 → 外部 dead-man 可見。
 - plan 動態排程任務不在靜態推算範圍（由 APScheduler EVENT_JOB_MISSED 覆蓋）。
+- 判定範圍（F1(b) 裁決，manager 2026-11-15）：只納「終態會落 sched_run」的
+  任務（見 SCHED_CARRIED_KINDS）；crontab／Hermes 直跑的宣告不受漏跑判定。
 - Watchdog.tick 全自吸例外：監督者不得把被監督者進程拖死。
 """
 from __future__ import annotations
@@ -143,11 +145,24 @@ class PgStore:
             return False
 
 
+# F1(b) 範圍裁決（manager 2026-11-15 採 reviewer 路線 (b)·背書不 renegotiate）：
+# 漏跑／靜默判定只納「終態會落 sched_run」的任務——誰跑誰記錄、誰記錄誰受判定。
+# - inproc：SchedService 進程內執行＋SchedRunRecorder 終態單筆映射 → 納管。
+# - exec：B0 零搬遷下由 OS crontab 直跑（非排程器），零寫入路徑 → 不納管。
+#   納管即天天假紅 missed 直進 append-only 表（覆核探針：2 日窗 26 張假單／
+#   13 任務）。B1a 外殼化（crontab 行改調 fund13-sched-run）後執行即落列，
+#   漏跑抑制自然成立；hosted-exec 的納管判式屬 B1a 卡設計，本層不發明欄位。
+# - hermes／os：執行與紀錄在外部系統（Hermes／gateway），B0 不寫列 → 不納管。
+SCHED_CARRIED_KINDS = frozenset({'inproc'})
+
+
 def _live_specs(specs: dict[str, TaskSpec], now: datetime) -> dict[str, TaskSpec]:
     out = {}
     for sid, s in specs.items():
         if not s.enabled:
             continue
+        if s.kind not in SCHED_CARRIED_KINDS:
+            continue   # F1(b)：非排程器承載＝終態不落表，不受漏跑／靜默判定
         lc = s.lifecycle or {}
         if lc.get('kind') == 'once' and lc.get('expires_at'):
             try:

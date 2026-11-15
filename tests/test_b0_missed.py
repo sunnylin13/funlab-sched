@@ -4,6 +4,7 @@
 cron  firing 以手算（每日 10:00 Asia/Taipei）為準。
 """
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from funlab.sched.manifest import TaskSpec
 from funlab.sched.missed import (HEARTBEAT_TASK_ID, SpoolStore, Watchdog,
@@ -18,7 +19,9 @@ def _dt(y, mo, d, h=0, mi=0):
 
 
 def _spec(id='gate1', trigger=None, enabled=True, lifecycle=None, heartbeat=None,
-          kind='exec'):
+          kind='inproc'):
+    # kind 預設 inproc＝「終態會落 sched_run」的納管任務（F1(b) 裁決，
+    # manager 2026-11-15 採 reviewer 路線 (b)）；非納管 kind 見 TestScopeCoverage。
     return TaskSpec(id=id, owner='dev-ops', kind=kind, entry='true',
                     trigger=trigger, enabled=enabled,
                     lifecycle=lifecycle, heartbeat=heartbeat,
@@ -100,6 +103,51 @@ class TestFindMissed:
         specs = {'off': off, 'once': once, 'plan': _spec(trigger={'type': 'plan'})}
         assert find_missed(specs, _DictStore(), now=_dt(2026, 11, 15, 12),
                            grace_sec=900) == []
+
+
+class TestScopeCoverage:
+    """F1(b) 裁決（manager 2026-11-15 採 reviewer 路線 (b)）：判定範圍＝終態會落
+    sched_run 的任務（誰跑誰記錄、誰記錄誰受漏跑判定）。crontab 直跑的 exec／
+    hermes／os 於 B0 無寫入路徑 → missed／silence 皆零誤報（覆核探針實據：
+    2 日窗 26 張假單／13 任務，假單直進 append-only 表清不掉）。
+    """
+
+    def test_exec_hermes_os_never_missed(self):
+        specs = {'e': _spec(id='e', kind='exec', trigger=DAILY_10),
+                 'h': _spec(id='h', kind='hermes', trigger=DAILY_10),
+                 'o': _spec(id='o', kind='os', trigger=DAILY_10)}
+        got = find_missed(specs, _DictStore(), now=_dt(2026, 11, 15, 12),
+                          grace_sec=900)
+        assert got == []
+
+    def test_exec_hermes_os_never_silence(self):
+        hb = {'max_silence_hours': 26}
+        specs = {'e': _spec(id='e', kind='exec', heartbeat=hb),
+                 'h': _spec(id='h', kind='hermes', heartbeat=hb)}
+        assert find_silence(specs, _DictStore(), now=_dt(2026, 11, 15, 12)) == []
+
+    def test_inproc_still_in_scope(self):
+        # 排程器實際承載的 inproc 照舊受漏跑判定（範圍縮小≠漏跑偵測失效）
+        got = find_missed({'a': _spec(id='a', kind='inproc', trigger=DAILY_10)},
+                          _DictStore(), now=_dt(2026, 11, 15, 12), grace_sec=900)
+        assert got and all(s.id == 'a' for s, _ in got)
+
+    def test_shipped_snapshot_zero_false_missed(self):
+        # reviewer F1 釘選測：真實 schedule/tasks.d 快照＋空 store＋代表時刻
+        # （週一 14:00 TPE）→ 全零誤報。修正前受審態＝2 日窗 26 張假單。
+        from funlab.sched.manifest import load_dir
+        snap = Path(__file__).resolve().parents[1] / 'schedule' / 'tasks.d'
+        specs, errors = load_dir(snap)
+        assert errors == []
+        # 防空轉假綠：快照必須含足量「enabled＋cron trigger 的 exec 宣告」
+        # （即覆核探針命中的假單來源族）。
+        guards = [s for s in specs.values()
+                  if s.kind == 'exec' and s.enabled
+                  and (s.trigger or {}).get('type') == 'cron']
+        assert len(guards) >= 10
+        got = find_missed(specs, _DictStore(), now=_dt(2026, 11, 16, 14),
+                          grace_sec=900)
+        assert [(s.id, e.isoformat()) for s, e in got] == []
 
 
 class TestFindSilence:
