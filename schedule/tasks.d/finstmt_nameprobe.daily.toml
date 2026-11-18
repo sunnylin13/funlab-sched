@@ -1,0 +1,17 @@
+# [t_d0c94fbb] 案③新科目名當日預警探針（唯讀日報；名稱級預警，selfprobe 值級判定不下線）
+# 卡面釘死四輪＝聚合批尾＋30min（02:30/10:30/16:30/21:30 CST）；正身腳本＝
+# finfun-finfetch/scripts/cron/finstmt_nameprobe.sh（thin dispatcher 在 .deploy，部署窗落）。
+# enabled=false＝合併後部署窗才翻正（合併部署併後續合法窗，卡面紅線；
+# 部署清單＝.deploy thin dispatcher＋ALERT_ON 兩段式：觀察期無旗標只落報告）。
+id = "finstmt_nameprobe.daily"
+owner = "dev-coder"
+kind = "exec"
+entry = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/finstmt_nameprobe.sh >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_finstmt_nameprobe.log 2>&1"
+legacy_ref = "fund13-sched-run finstmt_nameprobe.daily"
+trigger = { type = "cron", expr = "30 2,10,16,21 * * *", tz = "Asia/Taipei" }
+timeout_sec = 900
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 2 }
+heartbeat = { max_silence_hours = 9 }
+safety = { writes_db = false, idempotent = true }
+enabled = false
