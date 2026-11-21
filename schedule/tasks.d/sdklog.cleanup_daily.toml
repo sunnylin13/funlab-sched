@@ -1,0 +1,16 @@
+# B1b 遷移宣告（卡 t_fee60e5e，報告 §4-B1b＋§2.4-D01；裁決 D-261115-3）：D01 sdklog 清理（生命線，OS 觸發保留＝systemd timer 原位不動）
+# entry 逐字承自原 service ExecStart（%h→$HOME 同值展開；原輸出走 journal，外殼化後 entry 級輸出改導 cron_sdklog_cleanup.log，
+# 外殼自身 stdout/stderr 仍進 journal，失敗行為不劣於現況）。
+# legacy_ref＝hosted-exec 判式錨（本任務非 crontab 觸發，inventory 無行屬預期；missed/silence 判定仍生效）。
+id = "sdklog.cleanup_daily"
+owner = "dev-ops"
+kind = "exec"
+entry = "d=$HOME/workspaces/fund13/.sdklog; if [ -d \"$d\" ]; then find \"$d\" -type f -mtime +3 -delete; fi >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_sdklog_cleanup.log 2>&1"
+legacy_ref = "fund13-sched-run sdklog.cleanup_daily"
+trigger = { type = "cron", expr = "30 3 * * *", tz = "Asia/Taipei" }
+timeout_sec = 600
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 26 }
+safety = { writes_db = false, idempotent = true }
+enabled = true

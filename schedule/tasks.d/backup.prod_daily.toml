@@ -1,0 +1,17 @@
+# B1b 遷移宣告（卡 t_fee60e5e，報告 §4-B1b＋§2.1-A03；裁決 D-261115-3）：A03 每日正式庫備份（生命線，OS 觸發保留；B1b 最後一步）
+# entry／trigger 逐字承自原 crontab（auto 盤點快照 exec.home-...-backup-.toml）；命令與行為零變化。
+# safety 沿用初始盤點快照保守值（writes_db=true ∧ idempotent=false→禁自動重試，與原 cron 無重試行為一致）。
+# timeout_sec=7200＝實測 3.5 分×20 倍餘量（原 cron 無逾時語義，防誤殺正常備份）。
+# legacy_ref＝切換後 crontab 行實際子串（inventory 錨＋missed.py hosted-exec 判式）。
+id = "backup.prod_daily"
+owner = "dev-ops"
+kind = "exec"
+entry = "/home/sunnylin/workspaces/fund13/scripts/db_migration/backup_prod.sh >> /home/sunnylin/workspaces/fund13/backups/daily/cron.log 2>&1"
+legacy_ref = "fund13-sched-run backup.prod_daily"
+trigger = { type = "cron", expr = "0 2 * * *", tz = "Asia/Taipei" }
+timeout_sec = 7200
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 26 }
+safety = { writes_db = true, idempotent = false }
+enabled = true

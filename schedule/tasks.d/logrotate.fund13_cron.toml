@@ -1,0 +1,15 @@
+# B1b 遷移宣告（卡 t_fee60e5e，報告 §4-B1b＋§2.1-A10；裁決 D-261115-3）：A10 logrotate：cron 日誌輪替（生命線，OS 觸發保留）
+# entry／trigger 逐字承自原 crontab（auto 盤點快照 exec.usr-sbin-logrotate.toml）；命令與行為零變化。
+# legacy_ref＝切換後 crontab 行實際子串（inventory 錨＋missed.py hosted-exec 判式）。
+id = "logrotate.fund13_cron"
+owner = "dev-ops"
+kind = "exec"
+entry = "/usr/sbin/logrotate --state $HOME/.local/state/logrotate/fund13-cron.state $HOME/workspaces/fund13/finfun/deploy/logrotate/fund13-cron.conf >> $HOME/workspaces/fund13/.deploy/logs/logrotate.log 2>&1"
+legacy_ref = "fund13-sched-run logrotate.fund13_cron"
+trigger = { type = "cron", expr = "40 3 * * *", tz = "Asia/Taipei" }
+timeout_sec = 600
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 26 }
+safety = { writes_db = false, idempotent = true }
+enabled = true
