@@ -1,0 +1,20 @@
+# [t_7facfb60] periods_nused 縮窗率每日監控探針（丙案；只報不寫，selfprobe 同族）
+# 規格＝KB DevSpec-periods縮窗實際期數註記欄與縮窗監控-t_ec35a3d3-2026-11-22.md §5。
+# 正身腳本＝finfun-quantanlys/scripts/cron/quant_nused_probe.sh（thin dispatcher
+#   在 .deploy/quant_nused_probe.sh，部署窗落；未部署時腳本 SKIP rc0）。
+# enabled=false＝合併後部署窗才翻正（比照 finstmt_nameprobe.daily 紀律；
+#   推送開關另走兩段式旗標 dev/reports/selfcheck/NUSED_ALERT_ON，PM touch 轉正式）。
+# 掛點 05:15 CST：避 02:00 backup＋nightly dump／03:40 logrotate／04:30
+#   selfcheck 窗尾／10/16/22 點 fi_guards／17:10 因子帶／19:00–22:30 B4 讀取窗。
+id = "quant_nused_probe.daily"
+owner = "dev-coder"
+kind = "exec"
+entry = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/quant_nused_probe.sh >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_quant_nused_probe.log 2>&1"
+legacy_ref = "fund13-sched-run quant_nused_probe.daily"
+trigger = { type = "cron", expr = "15 5 * * *", tz = "Asia/Taipei" }
+timeout_sec = 300
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 26 }
+safety = { writes_db = false, idempotent = true }
+enabled = false
