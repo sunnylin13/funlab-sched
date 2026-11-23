@@ -1,0 +1,20 @@
+# [t_3e4431c3] W-3 免審寫入探針 finstmt_unaudited_watch 排程啟用（裁決 D-261121 錯批釘＋Sunny 裁 A 2026-11-23）。
+# 碼＝PR#171（finfun-finfetch 54e11da，隨 e6a8770 上線）。形制＝B1a hosted-exec 外殼（t_786e5277 先例）：
+# 裸命令全進 .deploy/finstmt_unaudited_watch.sh；crontab 只落 fund13-sched-run 外殼一行。
+# 裁 A（Sunny 2026-11-23 DM 逐字「1A 2甲」，manager 回帖釘 12:33）＝接排程但告警出口緩開：
+# 外殼首段不掛 --alert（sched_run 落表＋log 觀測＝偵測面生效、Telegram 0 則）；
+# W-5 治理生效後一支腳本 diff 補 --alert，屆時另拍知會。
+# 節拍 05:10 CST：避 logrotate 03:40／selfcheck 04:30／nameprobe 四槽／fi_guards 閘時；單輪 ~3.4s。
+# 預期 rc=1 常態（爬蟲 FI 鏈 2026Q3 首插入＝結構性免審族，判詞見回帖 #7061），非回歸。
+id = "finstmt_unaudited_watch.daily"
+owner = "dev-ops"
+kind = "exec"
+entry = "TZ=Asia/Taipei /home/sunnylin/workspaces/fund13/.deploy/finstmt_unaudited_watch.sh >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_finstmt_unaudited_watch.log 2>&1"
+legacy_ref = "fund13-sched-run finstmt_unaudited_watch.daily"
+trigger = { type = "cron", expr = "10 5 * * *", tz = "Asia/Taipei" }
+timeout_sec = 900
+retry = { max = 1 }
+alert = { channel = "log", dedupe_hours = 6 }
+heartbeat = { max_silence_hours = 26 }
+safety = { writes_db = false, idempotent = true }
+enabled = true
