@@ -262,7 +262,7 @@ def _sqlite_sched_run(rows=()):
                        'trigger_kind text, finished_at text)'))
         if rows:   # 空種子＝純空表（execute 空參列表會炸綁參required）
             c.execute(text("insert into sched_run values ('FetchFinstmt', :s, :k, :f)"),
-                      [dict(s=st, k=k, f=f) for st, k, f in rows])
+                      [{'s': st, 'k': k, 'f': f} for st, k, f in rows])
     return eng, text
 
 
@@ -318,9 +318,17 @@ def test_main_default_wiring_no_injection(capsys, monkeypatch):
 
 
 def test_main_guard_system_exit_code(capsys, monkeypatch):
-    """`python scripts/...py` 直跑路徑：__main__ 護欄把 rc 轉成 SystemExit。"""
+    """`python scripts/...py` 直跑路徑：__main__ 護欄把 rc 轉成 SystemExit。
+
+    REV 修正（Round 1 F1）：釘死 sys.argv＝僅腳本名，argparse 不得吞 pytest argv
+    （舊版 argv=None 走 argparse SystemExit(2) 假綠，護欄未被執行）。
+    空鏡像表＋真日曆 → 鏈不明，斷言收緊為恰 2（不再放寬 0/2 併容）。
+    """
     import runpy
+
     import sqlalchemy
+
+    monkeypatch.setattr(sys, 'argv', ['finstmt_chain_alive_gate.py'])
 
     def spy(url, **kw):
         eng, _ = _sqlite_sched_run()
@@ -330,4 +338,7 @@ def test_main_guard_system_exit_code(capsys, monkeypatch):
                         lambda: 'postgresql://stub-url/db')
     with pytest.raises(SystemExit) as e:
         runpy.run_path(str(SCRIPT), run_name='__main__')
-    assert e.value.code in (0, 2)   # 真日曆＋空鏡像表＝鏈不明 2（或鏡像含心跳 0）
+    assert e.value.code == 2   # 空鏡像表＝鏈不明（runpy 新模組自行走 default_query→spy）
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload['alive'] is False
+    assert payload['reason'] == 'no_heartbeat_in_window'

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """[t_2a2c557f] 收斂側心跳閘：FetchFinstmt 鏈存活查詢（AC-5 接線，ADR-101 §5.2）。
 
 薄殼定位（卡面 PM 裁決逐字）：讀庫＋算窗＋轉譯退出碼，**零判定邏輯、零複製常數**。
@@ -64,13 +63,13 @@ def compute_window_start(t: datetime) -> datetime:
     """
     try:
         from finfun.utils import fin_cale
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise GateError(f'calendar_unreachable: fin_cale import {type(e).__name__}: {e}') from e
     cur = t.astimezone(CST).date()
     try:
         for _ in range(WINDOW_TRADING_DAYS):
             cur = fin_cale.prev_trading_day(cur - timedelta(days=1))
-    except Exception as e:  # noqa: BLE001 — CalendarError/BoundsExceeded 一律轉 rc 3
+    except Exception as e:  # CalendarError/BoundsExceeded 一律轉 rc 3
         raise GateError(f'calendar_unreachable: {type(e).__name__}: {e}') from e
     return datetime.combine(cur, time.min, tzinfo=CST)
 
@@ -92,7 +91,7 @@ def resolve_production_url() -> str:
         url = mod.ENV_VAR_RE.sub(lambda m: env[m.group(1)], mod.active_production_url())
     except GateError:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         raise GateError(f'missing_component: resolve_dburl {type(e).__name__}: {e}') from e
     if 'ENV_VAR' in url:
         raise GateError('missing_component: DB url 展開後仍有佔位符')
