@@ -302,3 +302,19 @@ def test_repo_tasks_d_b1a_declarations_load():
     # 七行 entry 逐字含原命令與日誌重定向（行為零變化紅線的機械保證）
     assert specs['fi_guards.gate1'].entry.endswith(
         'fi_guards.sh gate1 >> /home/sunnylin/workspaces/fund13/.deploy/logs/cron_fi_guards.log 2>&1')
+
+
+# ---------- ADR-101 §5.3 FetchFinstmt 死人開關釘值 -----------------------------
+
+def test_fetchfinstmt_declaration_deadman_252h():
+    """死人開關釘值（卡 t_46947671，manager 裁案 A #7246）。
+
+    id 改釘 FetchFinstmt（sched_run 落表鍵，無 inproc. 前綴）＋
+    heartbeat.max_silence_hours == 252.0（T4 週期 168h×1.5，ADR-101 §5.2/§5.3，不得改）。
+    """
+    from funlab.sched.cli_run import DEFAULT_DECL_DIR
+    specs, errors = load_dir(DEFAULT_DECL_DIR)
+    assert errors == []
+    s = specs['FetchFinstmt']
+    assert s.kind == 'inproc' and s.entry == 'FetchFinstmtTask'
+    assert s.max_silence_hours == 252.0
