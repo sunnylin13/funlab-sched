@@ -1,0 +1,21 @@
+# walk-forward 校準季級排程宣告（佇列 P21f／裁決 D-261124-24；開發卡 t_5194a167）
+# kind=inproc 由 SchedService 執行：entry＝funlab_sched_task entry-point 名
+# （註冊於 finfun-backtest pyproject；PR 合併＋OPS 重裝後現於 Sched 頁）。
+# trigger type=plan＝排程鍵以 class plan_schedule() 為準（SCH-14 plan 贏 config；
+# 每日 04:10 台時觸發＋季對 done-marker／閉合守衛自決＝實際每季跑一次，
+# 節拍依據 SR-04 §6 Q3／ADR-050「校準每季一次」）。
+# safety：writes_db=false＝提案僅落 artifacts（report.md/proposal.yaml），
+# 對 DB 僅唯讀探針（引擎 BEGIN READ ONLY，ADR-009 D-12）；**永不寫回權重**
+# （切換現行 2026-10-v1 需另票呈 Sunny）。idempotent=true＝季對 marker 冪等。
+id = "inproc.WalkForwardCalibrate"
+owner = "dev-coder"
+kind = "inproc"
+entry = "WalkForwardCalibrate"
+enabled = true
+
+[trigger]
+type = "plan"
+
+[safety]
+writes_db = false
+idempotent = true
