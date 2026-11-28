@@ -1,0 +1,23 @@
+# 回測佇列消費排程宣告（佇列 Q2／回測第一批；部署卡 t_23666327 步 7）
+# kind=inproc 由 SchedService 執行：entry＝funlab_sched_task entry-point 名
+# （註冊於 finfun-backtest pyproject；PR#18~#24 合併＋OPS 重裝後現於 Sched 頁）。
+# trigger type=plan＝排程鍵以 class plan_schedule() 為準（SCH-14 plan 贏 config；
+# RunQueueDrainTask.plan_schedule()＝interval 每 2 分鐘輪詢拍，送件→開跑
+# 延遲上限≈一拍＋佇列前件）。
+# safety：writes_db=false＝worker 紅欄恆制於 worker 端（default_runner
+# write_db=False，佇列狀態僅落 lab schema，public 業務表零寫入）；
+# 併發恆 1 由 store 層雙保險承擔（running 部分唯一索引＋PG advisory lock）。
+# idempotent=true＝崩潰回收（租約過期孤兒回 pending）冪等。
+# 閘序：本檔僅准在步 3 DDL（lab schema＋lab.run_queue）落地後 commit 放置。
+id = "inproc.RunQueueDrain"
+owner = "dev-coder"
+kind = "inproc"
+entry = "RunQueueDrain"
+enabled = true
+
+[trigger]
+type = "plan"
+
+[safety]
+writes_db = false
+idempotent = true
